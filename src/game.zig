@@ -55,7 +55,8 @@ fn viableForFoundation(card: Card, n_top_rank: ?Card.Rank, suit: Card.Suit) bool
 
 fn viableForCascade(card: Card, n_top: ?Card) bool {
     if (n_top) |top| {
-        return card.suit.isOpposite(top.suit) and @intFromEnum(top.rank) - @intFromEnum(card.rank) == 1;
+        const diff: i32 = @as(i32, @intFromEnum(top.rank)) - @as(i32, @intFromEnum(card.rank));
+        return card.suit.isOpposite(top.suit) and diff == 1;
     } else {
         return true;
     }
@@ -278,7 +279,7 @@ pub fn frame(mx: i32, my: i32, inside: bool, pressed: bool) void {
                 }
 
                 for (std.enums.values(Card.Suit), 0..) |suit, i| {
-                    const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + top_line_x;
+                    const x = @as(i32, @intCast(i + 4)) * (card_w + card_x_gap) + top_line_x;
                     const y = top_line_y;
 
                     const region: RectRegion = .{ .x = x, .y = y, .w = card_w, .h = card_h };
@@ -286,7 +287,7 @@ pub fn frame(mx: i32, my: i32, inside: bool, pressed: bool) void {
                     if (!res_region.isEmpty()) {
                         if (2 * res_region.area() >= card_w * card_h) {
                             if (viableForFoundation(moving_cards.get(0), foundations.get(suit), suit)) {
-                                foundations.set(suit, moving_cards.get(0));
+                                foundations.set(suit, moving_cards.get(0).rank);
                                 removeDragCards(pos);
                                 break :blk;
                             }
@@ -363,6 +364,15 @@ pub fn frame(mx: i32, my: i32, inside: bool, pressed: bool) void {
         canvas.drawRect(x, y, card_w, card_h, HIGHLIGHT_COLOR);
     }
 
+    for (std.enums.values(Card.Suit), 0..) |suit, i| {
+        const x = @as(i32, @intCast(i + 4)) * (card_w + card_x_gap) + top_line_x;
+        const y = top_line_y;
+
+        if (foundations.get(suit)) |rank| {
+            canvas.drawSprite(x, y, cardToSprite(.{ .suit = suit, .rank = rank }));
+        }
+    }
+
     {
         var cards = std.BoundedArray(Card, 24).init(0) catch unreachable;
         if (dragging_pos) |pos| {
@@ -394,7 +404,8 @@ pub fn frame(mx: i32, my: i32, inside: bool, pressed: bool) void {
     }
 
     if (inside) {
-        canvas.drawRect(mx - 5, my - 5, 10, 10, d2.RGBA.BLACK);
+        canvas.drawSprite(mx, my, d2.Sprites.cursor);
+        // canvas.drawRect(mx - 5, my - 5, 10, 10, d2.RGBA.BLACK);
     }
 
     canvas.finalize();
