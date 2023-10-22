@@ -49,6 +49,41 @@ pub fn main() !void {
         }
     }
 
+    { // aux
+        var suits = [_][]const u8{ "spades", "hearts", "diamonds", "clubs" };
+
+        var tmp_w: i32 = -1;
+        var tmp_h: i32 = -1;
+        var image_n: i32 = -1;
+        var image_ptr = c.stbi_load("rsrc/aux.png", &tmp_w, &tmp_h, &image_n, 4) orelse @panic("image load failure");
+
+        var image_w: usize = @intCast(tmp_w);
+        var image_h: usize = @intCast(tmp_h);
+
+        std.debug.print("image loaded: w: {}, h: {}, n: {}\n", .{ image_w, image_h, image_n });
+
+        var image_data = image_ptr[0 .. 4 * image_w * image_h];
+        defer c.stbi_image_free(image_ptr);
+
+        const card_w = 88;
+        const card_h = 124;
+
+        if (card_w * 4 != image_w or card_h != image_h) {
+            @panic("loaded image unexpected size");
+        }
+
+        for (suits, 0..) |suit, i| {
+            const x = i * card_w;
+            const y = 0;
+
+            var buf: [256]u8 = undefined;
+            const out = try std.fmt.bufPrint(&buf, "{s}_foundation {} {}\n", .{ suit, card_w, card_h });
+            try data_info_file.writeAll(out);
+
+            try copyToFile(data_file, image_data, image_w, image_h, x, y, card_w, card_h);
+        }
+    }
+
     {
         var tmp_w: i32 = -1;
         var tmp_h: i32 = -1;

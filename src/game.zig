@@ -2,29 +2,39 @@ const wasm = @import("wasm.zig");
 const d2 = @import("d2.zig");
 const std = @import("std");
 
-var canvas: d2.Canvas = undefined;
+var game: App = undefined;
+
+// Called once
+pub fn init(main_image: d2.Image) void {
+    game = App.init(main_image);
+}
+
+// Called every frame
+pub fn frame(mouse_x: i32, mouse_y: i32, mouse_inside: bool, mouse_pressed: bool) void {
+    game.frame(mouse_x, mouse_y, mouse_inside, mouse_pressed);
+}
 
 const Card = struct {
-    pub const Suit = enum {
+    pub const Suit = enum(u8) {
         diamonds,
         hearts,
         clubs,
         spades,
 
-        fn isBlack(s: Suit) bool {
+        pub fn isBlack(s: Suit) bool {
             return s == .clubs or s == .spades;
         }
 
-        fn isRed(s: Suit) bool {
+        pub fn isRed(s: Suit) bool {
             return s == .diamonds or s == .hearts;
         }
 
-        fn isOpposite(s1: Suit, s2: Suit) bool {
-            return s1.isBlack() != s2.isBlack();
+        pub fn isOppositeColor(s1: Suit, s2: Suit) bool {
+            return s1.isRed() != s2.isRed();
         }
     };
 
-    pub const Rank = enum {
+    pub const Rank = enum(u8) {
         a,
         @"2",
         @"3",
@@ -38,31 +48,19 @@ const Card = struct {
         j,
         q,
         k,
+
+        pub fn diff(r1: Rank, r2: Rank) i32 {
+            const int1 = @as(i32, @intFromEnum(r1));
+            const int2 = @as(i32, @intFromEnum(r2));
+            return int1 - int2;
+        }
     };
 
     suit: Suit,
     rank: Rank,
 };
 
-fn viableForFoundation(card: Card, n_top_rank: ?Card.Rank, suit: Card.Suit) bool {
-    if (card.suit != suit) return false;
-    if (n_top_rank) |top_rank| {
-        return @intFromEnum(card.rank) - @intFromEnum(top_rank) == 1;
-    } else {
-        return card.rank == .a;
-    }
-}
-
-fn viableForCascade(card: Card, n_top: ?Card) bool {
-    if (n_top) |top| {
-        const diff: i32 = @as(i32, @intFromEnum(top.rank)) - @as(i32, @intFromEnum(card.rank));
-        return card.suit.isOpposite(top.suit) and diff == 1;
-    } else {
-        return true;
-    }
-}
-
-pub fn cardToSprite(card: Card) d2.Sprites {
+fn cardToSprite(card: Card) d2.Sprites {
     switch (card.suit) {
         inline else => |suit| {
             switch (card.rank) {
@@ -76,15 +74,13 @@ pub fn cardToSprite(card: Card) d2.Sprites {
     }
 }
 
-const card_w = 88;
-const card_h = 124;
-
-// Called once
-pub fn init(main_image: d2.Image) void {
-    resetGame();
-    canvas = .{
-        .backed_image = main_image,
-    };
+fn suitToSprite(suit: Card.Suit) d2.Sprites {
+    switch (suit) {
+        inline else => |s| {
+            const suit_str = @tagName(s);
+            return std.enums.nameCast(d2.Sprites, suit_str ++ "_foundation");
+        },
+    }
 }
 
 const RectRegion = struct {
@@ -102,7 +98,7 @@ const RectRegion = struct {
         const y1 = @max(r1.y, r2.y);
         const x2 = @min(r1.x + r1.w, r2.x + r2.w);
         const y2 = @min(r1.y + r1.h, r2.y + r2.h);
-        return .{ .x = x1, .y = y1, .w = x2 - x1, .h = y2 - y1 };
+        return .{ .x = x1, .y = y1, .w = @max(0, x2 - x1), .h = @max(0, y2 - y1) };
     }
 
     pub fn isEmpty(r: RectRegion) bool {
@@ -114,299 +110,382 @@ const RectRegion = struct {
     }
 };
 
-fn resetGame() void {
-    open_slots = .{ null, null, null, null };
-    foundations = std.EnumArray(Card.Suit, ?Card.Rank).initFill(null);
+// Represents basic state of freecell game played, no reference to UI and drawing
+const Freecell = struct {
+    const CASCADE_CARD_LIMIT = 32; // sane limit for bounded arrays
 
-    var deck = comptime blk: {
-        var deck_tmp: [52]Card = undefined;
-        var i: usize = 0;
-        for (std.enums.values(Card.Suit)) |suit| {
-            for (std.enums.values(Card.Rank)) |rank| {
-                deck_tmp[i] = .{ .suit = suit, .rank = rank };
-                i += 1;
-            }
+    open_slots: [4]?Card,
+    foundations: std.EnumArray(Card.Suit, ?Card.Rank),
+    cascades: [8]std.BoundedArray(Card, CASCADE_CARD_LIMIT),
+
+    pub const CardPos = union(enum) {
+        open_slot: u8,
+        foundation: u8,
+        cascade: struct { u8, u8 },
+    };
+
+    pub fn isMovable(f: *Freecell, pos: CardPos) bool {
+        switch (pos) {
+            .open_slot => return true,
+            .foundation => return false,
+            .cascade => |ij| {
+                const i = ij[0];
+                const cascade = f.cascades[i];
+                var j = ij[1];
+                const len: usize = cascade.len;
+                while (j + 1 < len) {
+                    const card1 = cascade.get(j);
+                    const card2 = cascade.get(j + 1);
+                    if (!(card1.suit.isOppositeColor(card2.suit) and card1.rank.diff(card2.rank) == 1)) {
+                        return false;
+                    }
+                    j += 1;
+                }
+                return true;
+            },
+        }
+    }
+
+    pub fn cardsFromPos(f: *Freecell, pos: CardPos) std.BoundedArray(Card, CASCADE_CARD_LIMIT) {
+        var cards = std.BoundedArray(Card, CASCADE_CARD_LIMIT).init(0) catch unreachable;
+        switch (pos) {
+            .open_slot => |i| {
+                cards.append(f.open_slots[i].?) catch unreachable;
+            },
+            .cascade => |ij| {
+                const i = ij[0];
+                const cascade = f.cascades[i];
+                var j = ij[1];
+                const len: usize = cascade.len;
+                while (j < len) {
+                    cards.append(cascade.get(j)) catch unreachable;
+                    j += 1;
+                }
+            },
+            .foundation => unreachable,
+        }
+        return cards;
+    }
+
+    pub fn attemptMove(f: *Freecell, from: CardPos, to: CardPos) void { // "to" value cascade row meaningless
+        const cards = f.cardsFromPos(from);
+
+        switch (to) { // abort
+            .open_slot => |i| {
+                if (!(f.open_slots[i] == null and cards.len == 1)) return;
+            },
+            .foundation => |i| {
+                if (cards.len != 1) return;
+                const suit: Card.Suit = @enumFromInt(i);
+                const card = cards.get(0);
+                if (suit != cards.get(0).suit) return;
+                if (f.foundations.get(suit)) |rank| {
+                    if (card.rank.diff(rank) != 1) return;
+                } else {
+                    if (card.rank != .a) return;
+                }
+            },
+            .cascade => |ij| {
+                const i = ij[0];
+                const cascade = f.cascades[i];
+                if (cascade.len > 0) {
+                    const card1 = cards.get(0);
+                    const card2 = cascade.get(cascade.len - 1);
+
+                    if (!(card1.suit.isOppositeColor(card2.suit) and card1.rank.diff(card2.rank) == -1)) return;
+                }
+            },
         }
 
-        break :blk deck_tmp;
-    };
+        switch (from) { // delete
+            .open_slot => |i| {
+                f.open_slots[i] = null;
+            },
+            .cascade => |ij| {
+                const i = ij[0];
+                const j = ij[1];
+                f.cascades[i].resize(j) catch unreachable;
+            },
+            .foundation => unreachable,
+        }
 
-    var prng = std.rand.DefaultPrng.init(wasm.seed());
-    var random = prng.random();
-    random.shuffle(Card, &deck);
+        switch (to) { // add
+            .open_slot => |i| {
+                f.open_slots[i] = cards.get(0);
+            },
+            .cascade => |ij| {
+                const i = ij[0];
+                for (cards.slice()) |card| {
+                    f.cascades[i].append(card) catch unreachable;
+                }
+            },
+            .foundation => |i| {
+                const suit: Card.Suit = @enumFromInt(i);
+                const card = cards.get(0);
+                f.foundations.set(suit, card.rank);
+            },
+        }
+    }
 
-    cascades = .{
-        std.BoundedArray(Card, 24).fromSlice(deck[0..7]) catch unreachable,
-        std.BoundedArray(Card, 24).fromSlice(deck[7..14]) catch unreachable,
-        std.BoundedArray(Card, 24).fromSlice(deck[14..21]) catch unreachable,
-        std.BoundedArray(Card, 24).fromSlice(deck[21..28]) catch unreachable,
-        std.BoundedArray(Card, 24).fromSlice(deck[28..34]) catch unreachable,
-        std.BoundedArray(Card, 24).fromSlice(deck[34..40]) catch unreachable,
-        std.BoundedArray(Card, 24).fromSlice(deck[40..46]) catch unreachable,
-        std.BoundedArray(Card, 24).fromSlice(deck[46..52]) catch unreachable,
-    };
-}
-
-fn dragCards(pos: CardPosition) std.BoundedArray(Card, 16) {
-    var cards = std.BoundedArray(Card, 16).init(0) catch unreachable;
-    switch (pos) {
-        .open_slot => |i| {
-            cards.append(open_slots[i].?) catch unreachable;
-        },
-        .cascade => |cpos| {
-            const cascade = cascades[cpos.column];
-            var j: usize = @intCast(cpos.row);
-            const len: usize = @intCast(cascade.len);
-            while (j < len) {
-                cards.append(cascade.get(j)) catch unreachable;
-                j += 1;
+    pub fn init(seed: u64) Freecell {
+        var deck = comptime blk: {
+            var deck_tmp: [52]Card = undefined;
+            var i: usize = 0;
+            for (std.enums.values(Card.Suit)) |suit| {
+                for (std.enums.values(Card.Rank)) |rank| {
+                    deck_tmp[i] = .{ .suit = suit, .rank = rank };
+                    i += 1;
+                }
             }
-        },
+
+            break :blk deck_tmp;
+        };
+
+        // TODO: research alternatives for seeding and randomising
+        var prng = std.rand.DefaultPrng.init(seed);
+        var random = prng.random();
+        random.shuffle(Card, &deck);
+
+        const CascadeArrayType = std.BoundedArray(Card, CASCADE_CARD_LIMIT);
+        return .{
+            .open_slots = .{ null, null, null, null },
+            .foundations = std.EnumArray(Card.Suit, ?Card.Rank).initFill(null),
+            .cascades = .{
+                CascadeArrayType.fromSlice(deck[0..7]) catch unreachable,
+                CascadeArrayType.fromSlice(deck[7..14]) catch unreachable,
+                CascadeArrayType.fromSlice(deck[14..21]) catch unreachable,
+                CascadeArrayType.fromSlice(deck[21..28]) catch unreachable,
+                CascadeArrayType.fromSlice(deck[28..34]) catch unreachable,
+                CascadeArrayType.fromSlice(deck[34..40]) catch unreachable,
+                CascadeArrayType.fromSlice(deck[40..46]) catch unreachable,
+                CascadeArrayType.fromSlice(deck[46..52]) catch unreachable,
+            },
+        };
     }
-    return cards;
-}
-
-fn removeDragCards(pos: CardPosition) void {
-    switch (pos) {
-        .open_slot => |i| {
-            open_slots[i] = null;
-        },
-        .cascade => |cpos| {
-            cascades[cpos.column].resize(cpos.row) catch unreachable;
-        },
-    }
-}
-
-var open_slots: [4]?Card = undefined;
-var foundations: std.EnumArray(Card.Suit, ?Card.Rank) = undefined;
-var cascades: [8]std.BoundedArray(Card, 24) = undefined;
-
-var drag_card_offset_x: i32 = 0;
-var drag_card_offset_y: i32 = 0;
-
-const CascadePos = struct {
-    column: u8,
-    row: u8,
 };
 
-const CardPosition = union(enum) {
-    open_slot: u8,
-    cascade: CascadePos,
-};
+const App = struct {
+    canvas: d2.Canvas,
+    freecell: Freecell,
+    mouse_pressed_prev_frame: bool,
+    drag: ?DragState,
 
-var dragging_pos: ?CardPosition = null;
-var pressed_prev: bool = false;
+    const DragState = struct {
+        offset_x: i32,
+        offset_y: i32,
+        top_card_pos: Freecell.CardPos, // position of card that was moved
+    };
 
-pub fn frame(mx: i32, my: i32, inside: bool, pressed: bool) void {
-    const BOARD_COLOR: d2.RGBA = .{ .r = 0x00, .g = 0x80, .b = 0x00, .a = 0xFF };
-    const HIGHLIGHT_COLOR: d2.RGBA = .{ .r = 0x00, .g = 0x50, .b = 0x00, .a = 0xFF };
+    pub fn init(main_image: d2.Image) App {
+        return .{
+            .canvas = .{ .backed_image = main_image },
+            .freecell = Freecell.init(wasm.seed()),
+            .mouse_pressed_prev_frame = false,
+            .drag = null,
+        };
+    }
 
-    const width = canvas.width();
-    const height = canvas.height();
-
+    const card_w = 88;
+    const card_h = 124;
     const card_x_gap = 20;
     const card_y_shift = 30;
 
     const main_board_y_shift = 180;
     const main_board_width = 8 * card_w + (8 - 1) * card_x_gap;
-    const main_board_x_shift = @divTrunc(width - main_board_width, 2);
 
-    const top_line_x = main_board_x_shift;
     const top_line_y = 20;
 
-    const clicked = !pressed_prev and pressed;
-    pressed_prev = pressed;
+    fn cardDropPos(g: *App, card_region: RectRegion) ?Freecell.CardPos { // card position, ignore cascade row
+        const width = g.canvas.width();
+        const height = g.canvas.height();
+        const main_board_x_shift = @divTrunc(width - main_board_width, 2);
+        const top_line_x = main_board_x_shift;
 
-    if (clicked) {
-        _ = blk: {
-            for (0..4) |i| {
-                if (open_slots[i] == null) continue;
-                const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + top_line_x;
-                const y = top_line_y;
-
-                const region: RectRegion = .{ .x = x, .y = y, .w = card_w, .h = card_h };
-                if (region.inside(mx, my)) {
-                    drag_card_offset_x = mx - region.x;
-                    drag_card_offset_y = my - region.y;
-
-                    dragging_pos = .{ .open_slot = @intCast(i) };
-
-                    break :blk;
-                }
-            }
-            for (cascades, 0..) |cascade, i| {
-                if (cascade.len == 0) continue;
-
-                const j = cascade.len - 1;
-                // const last_card = cascade.get(j);
-
-                const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + main_board_x_shift;
-                const y = @as(i32, @intCast(j)) * card_y_shift + main_board_y_shift;
-                const region: RectRegion = .{ .x = x, .y = y, .w = card_w, .h = card_h };
-                if (region.inside(mx, my)) {
-                    drag_card_offset_x = mx - region.x;
-                    drag_card_offset_y = my - region.y;
-
-                    dragging_pos = .{ .cascade = .{ .column = @intCast(i), .row = @intCast(j) } };
-
-                    break :blk;
-                }
-            }
-        };
-    }
-    if (!pressed) {
-        if (dragging_pos) |pos| blk: {
-            const moving_cards = dragCards(pos);
-            const card_off_x = mx - drag_card_offset_x;
-            const card_off_y = my - drag_card_offset_y;
-            const draggin_rect: RectRegion = .{ .x = card_off_x, .y = card_off_y, .w = card_w, .h = card_h };
-
-            if (moving_cards.len == 1) {
-                for (0..4) |i| {
-                    if (open_slots[i] != null) continue;
-                    const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + top_line_x;
-                    const y = top_line_y;
-
-                    const region: RectRegion = .{ .x = x, .y = y, .w = card_w, .h = card_h };
-                    const res_region = region.intersect(draggin_rect);
-                    if (!res_region.isEmpty()) {
-                        if (2 * res_region.area() >= card_w * card_h) {
-                            open_slots[i] = moving_cards.get(0);
-                            removeDragCards(pos);
-                            break :blk;
-                        }
-                    }
-                }
-
-                for (std.enums.values(Card.Suit), 0..) |suit, i| {
-                    const x = @as(i32, @intCast(i + 4)) * (card_w + card_x_gap) + top_line_x;
-                    const y = top_line_y;
-
-                    const region: RectRegion = .{ .x = x, .y = y, .w = card_w, .h = card_h };
-                    const res_region = region.intersect(draggin_rect);
-                    if (!res_region.isEmpty()) {
-                        if (2 * res_region.area() >= card_w * card_h) {
-                            if (viableForFoundation(moving_cards.get(0), foundations.get(suit), suit)) {
-                                foundations.set(suit, moving_cards.get(0).rank);
-                                removeDragCards(pos);
-                                break :blk;
-                            }
-                        }
-                    }
-                }
-            }
-
-            for (cascades, 0..) |cascade, i| {
-                if (pos == .cascade and pos.cascade.column == i) continue;
-
-                const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + main_board_x_shift;
-                const y = main_board_y_shift;
-                const region: RectRegion = .{ .x = x, .y = y, .w = card_w, .h = height - main_board_y_shift };
-                const res_region = region.intersect(draggin_rect);
-                if (!res_region.isEmpty()) {
-                    if (2 * res_region.area() >= card_w * card_h) {
-                        const n_top: ?Card = if (cascade.len == 0) null else cascade.get(cascade.len - 1);
-                        if (viableForCascade(moving_cards.get(0), n_top)) {
-                            for (moving_cards.slice()) |card| {
-                                cascades[i].append(card) catch unreachable;
-                            }
-                            removeDragCards(pos);
-                            break :blk;
-                        }
-                    }
-                }
-            }
-        }
-
-        dragging_pos = null;
-    }
-
-    canvas.drawColor(BOARD_COLOR);
-
-    const nij: ?CascadePos = blk: {
-        if (dragging_pos) |pos| {
-            break :blk switch (pos) {
-                .cascade => |val| val,
-                else => null,
-            };
-        } else {
-            break :blk null;
-        }
-    };
-
-    for (cascades, 0..) |cascade, i| {
-        for (cascade.slice(), 0..) |card, j| {
-            if (nij) |ij| if (ij.column == i and ij.row <= j) break;
-            const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + main_board_x_shift;
-            const y = @as(i32, @intCast(j)) * card_y_shift + main_board_y_shift;
-            canvas.drawSprite(x, y, cardToSprite(card));
-        }
-    }
-
-    for (0..4) |i| {
-        const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + top_line_x;
-        const y = top_line_y;
-        canvas.drawRect(x, y, card_w, card_h, HIGHLIGHT_COLOR);
-    }
-
-    for (0..4) |i| {
-        if (dragging_pos) |pos| if (pos == .open_slot and pos.open_slot == i) continue;
-        if (open_slots[i]) |card| {
+        var best_area: i64 = 0; // search of best intersection
+        var best_pos: ?Freecell.CardPos = null;
+        for (0..4) |i| { // open slots
             const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + top_line_x;
             const y = top_line_y;
-            canvas.drawSprite(x, y, cardToSprite(card));
+            const intersect_area = card_region.intersect(.{ .x = x, .y = y, .w = card_w, .h = card_h }).area();
+            if (intersect_area > best_area) {
+                best_area = intersect_area;
+                best_pos = .{ .open_slot = @intCast(i) };
+            }
+        }
+        for (0..8) |i| { // cascades
+            const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + main_board_x_shift;
+            const y = main_board_y_shift;
+            const intersect_area = card_region.intersect(.{ .x = x, .y = y, .w = card_w, .h = height - main_board_y_shift }).area();
+            if (intersect_area > best_area) {
+                best_area = intersect_area;
+                best_pos = .{ .cascade = .{ @intCast(i), 0 } };
+            }
+        }
+        for (0..4) |i| { // foundation
+            const x = @as(i32, @intCast(i + 4)) * (card_w + card_x_gap) + top_line_x;
+            const y = top_line_y;
+            const intersect_area = card_region.intersect(.{ .x = x, .y = y, .w = card_w, .h = card_h }).area();
+            if (intersect_area > best_area) {
+                best_area = intersect_area;
+                best_pos = .{ .foundation = @intCast(i) };
+            }
+        }
+        return best_pos;
+    }
+
+    fn cardRegionFromPos(g: *App, pos: Freecell.CardPos) RectRegion {
+        const width = g.canvas.width();
+        const main_board_x_shift = @divTrunc(width - main_board_width, 2);
+        const top_line_x = main_board_x_shift;
+        switch (pos) {
+            .cascade => |ij| {
+                const i = ij[0];
+                const j = ij[1];
+                const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + main_board_x_shift;
+                const y = @as(i32, @intCast(j)) * card_y_shift + main_board_y_shift;
+                return .{ .x = x, .y = y, .w = card_w, .h = card_h };
+            },
+            .open_slot => |i| {
+                const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + top_line_x;
+                const y = top_line_y;
+                return .{ .x = x, .y = y, .w = card_w, .h = card_h };
+            },
+            .foundation => |i| {
+                const x = @as(i32, @intCast(i + 4)) * (card_w + card_x_gap) + top_line_x;
+                const y = top_line_y;
+                return .{ .x = x, .y = y, .w = card_w, .h = card_h };
+            },
         }
     }
 
-    for (4..8) |i| {
-        const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + top_line_x;
-        const y = top_line_y;
-        canvas.drawRect(x, y, card_w, card_h, HIGHLIGHT_COLOR);
-    }
+    fn cardClickPos(g: *App, click_x: i32, click_y: i32) ?Freecell.CardPos { // card position
+        const width = g.canvas.width();
+        const height = g.canvas.height();
+        _ = height;
+        const main_board_x_shift = @divTrunc(width - main_board_width, 2);
+        const top_line_x = main_board_x_shift;
 
-    for (std.enums.values(Card.Suit), 0..) |suit, i| {
-        const x = @as(i32, @intCast(i + 4)) * (card_w + card_x_gap) + top_line_x;
-        const y = top_line_y;
-
-        if (foundations.get(suit)) |rank| {
-            canvas.drawSprite(x, y, cardToSprite(.{ .suit = suit, .rank = rank }));
+        for (0..4) |i| { // open slots
+            const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + top_line_x;
+            const y = top_line_y;
+            const region: RectRegion = .{ .x = x, .y = y, .w = card_w, .h = card_h };
+            if (region.inside(click_x, click_y)) {
+                return .{ .open_slot = @intCast(i) };
+            }
         }
+        for (g.freecell.cascades, 0..) |cascade, i| { // cascades
+            for (cascade.slice(), 0..) |_, j| {
+                const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + main_board_x_shift;
+                const y = @as(i32, @intCast(j)) * card_y_shift + main_board_y_shift;
+                const region: RectRegion = blk: {
+                    if (j != cascade.len - 1) break :blk .{ .x = x, .y = y, .w = card_w, .h = card_y_shift };
+                    break :blk .{ .x = x, .y = y, .w = card_w, .h = card_h }; // last card
+                };
+                if (region.inside(click_x, click_y)) {
+                    return .{ .cascade = .{ @intCast(i), @intCast(j) } };
+                }
+            }
+        }
+        return null;
     }
 
-    {
-        var cards = std.BoundedArray(Card, 24).init(0) catch unreachable;
-        if (dragging_pos) |pos| {
-            switch (pos) {
-                .open_slot => |i| {
-                    cards.append(open_slots[i].?) catch unreachable;
-                },
-                .cascade => |cpos| {
-                    const i: usize = cpos.column;
-                    const cascade = cascades[i];
-                    var j: usize = cpos.row;
-                    const cascade_size: usize = @intCast(cascade.len);
-                    while (j < cascade_size) {
-                        cards.append(cascade.get(j)) catch unreachable;
-                        j += 1;
-                    }
-                },
+    pub fn frame(g: *App, mouse_x: i32, mouse_y: i32, mouse_inside: bool, mouse_pressed: bool) void {
+        const clicked = mouse_pressed and !g.mouse_pressed_prev_frame;
+        g.mouse_pressed_prev_frame = mouse_pressed;
+
+        if (clicked) {
+            if (g.cardClickPos(mouse_x, mouse_y)) |pos| {
+                if (g.freecell.isMovable(pos)) {
+                    const card_region = g.cardRegionFromPos(pos);
+                    g.drag = .{
+                        .offset_x = mouse_x - card_region.x,
+                        .offset_y = mouse_y - card_region.y,
+                        .top_card_pos = pos,
+                    };
+                }
             }
         }
 
-        const card_off_x = mx - drag_card_offset_x;
-        const card_off_y = my - drag_card_offset_y;
-
-        for (cards.slice(), 0..) |card, j| {
-            const x = card_off_x;
-            const y = @as(i32, @intCast(j)) * card_y_shift + card_off_y;
-            canvas.drawSprite(x, y, cardToSprite(card));
+        if (!mouse_pressed) {
+            if (g.drag) |d| blk: {
+                const card_region: RectRegion = .{ .x = mouse_x - d.offset_x, .y = mouse_y - d.offset_y, .w = card_w, .h = card_h };
+                const to = g.cardDropPos(card_region) orelse break :blk;
+                g.freecell.attemptMove(d.top_card_pos, to);
+            }
+            g.drag = null;
         }
-    }
 
-    if (inside) {
-        canvas.drawSprite(mx, my, d2.Sprites.cursor);
-        // canvas.drawRect(mx - 5, my - 5, 10, 10, d2.RGBA.BLACK);
-    }
+        // draw
 
-    canvas.finalize();
-}
+        const BOARD_COLOR: d2.RGBA = .{ .r = 0x00, .g = 0x80, .b = 0x00, .a = 0xFF };
+        const HIGHLIGHT_COLOR: d2.RGBA = .{ .r = 0x00, .g = 0x50, .b = 0x00, .a = 0xFF };
+
+        const width = g.canvas.width();
+        const height = g.canvas.height();
+        _ = height;
+        const main_board_x_shift = @divTrunc(width - main_board_width, 2);
+        const top_line_x = main_board_x_shift;
+
+        g.canvas.drawColor(BOARD_COLOR);
+
+        for (g.freecell.cascades, 0..) |cascade, i| {
+            for (cascade.slice(), 0..) |card, j| {
+                if (g.drag) |d| if (d.top_card_pos == .cascade and d.top_card_pos.cascade[0] == i and d.top_card_pos.cascade[1] == j) break;
+                const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + main_board_x_shift;
+                const y = @as(i32, @intCast(j)) * card_y_shift + main_board_y_shift;
+                g.canvas.drawSprite(x, y, cardToSprite(card));
+            }
+        }
+
+        for (0..4) |i| {
+            const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + top_line_x;
+            const y = top_line_y;
+            g.canvas.drawRect(x, y, card_w, card_h, HIGHLIGHT_COLOR);
+        }
+
+        for (0..4) |i| {
+            if (g.drag) |d| if (d.top_card_pos == .open_slot and d.top_card_pos.open_slot == i) continue;
+            if (g.freecell.open_slots[i]) |card| {
+                const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + top_line_x;
+                const y = top_line_y;
+                g.canvas.drawSprite(x, y, cardToSprite(card));
+            }
+        }
+
+        for (4..8) |i| {
+            const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + top_line_x;
+            const y = top_line_y;
+            g.canvas.drawRect(x, y, card_w, card_h, HIGHLIGHT_COLOR);
+        }
+
+        for (std.enums.values(Card.Suit), 0..) |suit, i| {
+            const x = @as(i32, @intCast(i + 4)) * (card_w + card_x_gap) + top_line_x;
+            const y = top_line_y;
+
+            if (g.freecell.foundations.get(suit)) |rank| {
+                g.canvas.drawSprite(x, y, cardToSprite(.{ .suit = suit, .rank = rank }));
+            } else {
+                g.canvas.drawSprite(x, y, suitToSprite(suit));
+            }
+        }
+
+        if (g.drag) |d| {
+            var cards = g.freecell.cardsFromPos(d.top_card_pos);
+
+            const card_off_x = mouse_x - d.offset_x;
+            const card_off_y = mouse_y - d.offset_y;
+
+            for (cards.slice(), 0..) |card, j| {
+                const x = card_off_x;
+                const y = @as(i32, @intCast(j)) * card_y_shift + card_off_y;
+                g.canvas.drawSprite(x, y, cardToSprite(card));
+            }
+        }
+
+        if (mouse_inside) {
+            g.canvas.drawSprite(mouse_x, mouse_y, d2.Sprites.cursor);
+        }
+
+        g.canvas.finalize();
+    }
+};
