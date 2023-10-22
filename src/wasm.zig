@@ -46,6 +46,6 @@ export fn _init(w: i32, h: i32) [*]d2.RGBA {
     return main_image.data.ptr;
 }
 
-export fn _frame(mx: i32, my: i32, inside: bool, pressed: bool) void {
-    game.frame(mx, my, inside, pressed);
+export fn _frame(mx: i32, my: i32, inside: bool, pressed: bool, time: f32) void {
+    game.frame(mx, my, inside, pressed, time);
 }

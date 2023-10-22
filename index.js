@@ -1,8 +1,33 @@
 const canvas = document.getElementById("canvas");
 const width = canvas.width;
 const height = canvas.height;
+let fullscreen = false;
 
 const ctx = canvas.getContext("2d");
+
+// // Toggle fullscreen
+// function toggleFullscreen() {
+//     if (!fullscreen) {
+//         if (canvas.requestFullscreen) {
+//             canvas.requestFullscreen();
+//         }
+//         canvas.width = window.innerWidth;
+//         canvas.height = window.innerHeight;
+//     } else {
+//         if (document.exitFullscreen) {
+//             document.exitFullscreen();
+//         }
+//         canvas.width = width;
+//         canvas.height = height;
+//     }
+//     fullscreen = !fullscreen;
+// }
+
+// document.addEventListener("keydown", (event) =>{
+//     if (event.key === "Escape") {
+//         toggleFullscreen();
+//     }
+// });
 
 let memory = null;
 const imports = {
@@ -66,7 +91,7 @@ canvas.addEventListener('mouseup', (e) => {
 function frame() {
     // const startTime = performance.now();
 
-    _frame(mouseX, mouseY, mouseInside, mousePressed);
+    _frame(mouseX, mouseY, mouseInside, mousePressed, performance.now());
     ctx.putImageData(imageData, 0, 0);
 
     // const endTime = performance.now();

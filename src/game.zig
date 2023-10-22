@@ -10,8 +10,8 @@ pub fn init(main_image: d2.Image) void {
 }
 
 // Called every frame
-pub fn frame(mouse_x: i32, mouse_y: i32, mouse_inside: bool, mouse_pressed: bool) void {
-    game.frame(mouse_x, mouse_y, mouse_inside, mouse_pressed);
+pub fn frame(mouse_x: i32, mouse_y: i32, mouse_inside: bool, mouse_pressed: bool, time: f32) void {
+    game.frame(mouse_x, mouse_y, mouse_inside, mouse_pressed, time);
 }
 
 const Card = struct {
@@ -124,6 +124,38 @@ const Freecell = struct {
         cascade: struct { u8, u8 },
     };
 
+    fn isAutomove(f: *Freecell, card: Card) bool {
+        if (f.foundations.get(card.suit)) |rank| {
+            if (card.rank == .@"2") return true;
+            if (card.rank.diff(rank) != 1) return false;
+            for (std.enums.values(Card.Suit)) |suit| {
+                if (card.suit.isOppositeColor(suit)) {
+                    if (f.foundations.get(suit)) |op_rank| {
+                        if (card.rank.diff(op_rank) > 1) return false;
+                    } else {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        } else {
+            return card.rank == .a;
+        }
+    }
+
+    pub fn findFoundationAutomove(f: *Freecell) ?CardPos {
+        for (0..4) |i| {
+            if (f.open_slots[i]) |card| {
+                if (f.isAutomove(card)) return .{ .open_slot = @intCast(i) };
+            }
+        }
+        for (0..8) |i| {
+            const cascade = f.cascades[i];
+            if (cascade.len > 0 and f.isAutomove(cascade.get(cascade.len - 1))) return .{ .cascade = .{ @intCast(i), @intCast(cascade.len - 1) } };
+        }
+        return null;
+    }
+
     pub fn isMovable(f: *Freecell, pos: CardPos) bool {
         switch (pos) {
             .open_slot => return true,
@@ -167,22 +199,22 @@ const Freecell = struct {
         return cards;
     }
 
-    pub fn attemptMove(f: *Freecell, from: CardPos, to: CardPos) void { // "to" value cascade row meaningless
+    pub fn attemptMove(f: *Freecell, from: CardPos, to: CardPos) bool { // "to" value cascade row meaningless
         const cards = f.cardsFromPos(from);
 
         switch (to) { // abort
             .open_slot => |i| {
-                if (!(f.open_slots[i] == null and cards.len == 1)) return;
+                if (!(f.open_slots[i] == null and cards.len == 1)) return false;
             },
             .foundation => |i| {
-                if (cards.len != 1) return;
+                if (cards.len != 1) return false;
                 const suit: Card.Suit = @enumFromInt(i);
                 const card = cards.get(0);
-                if (suit != cards.get(0).suit) return;
+                if (suit != cards.get(0).suit) return false;
                 if (f.foundations.get(suit)) |rank| {
-                    if (card.rank.diff(rank) != 1) return;
+                    if (card.rank.diff(rank) != 1) return false;
                 } else {
-                    if (card.rank != .a) return;
+                    if (card.rank != .a) return false;
                 }
             },
             .cascade => |ij| {
@@ -192,7 +224,7 @@ const Freecell = struct {
                     const card1 = cards.get(0);
                     const card2 = cascade.get(cascade.len - 1);
 
-                    if (!(card1.suit.isOppositeColor(card2.suit) and card1.rank.diff(card2.rank) == -1)) return;
+                    if (!(card1.suit.isOppositeColor(card2.suit) and card1.rank.diff(card2.rank) == -1)) return false;
                 }
             },
         }
@@ -225,6 +257,7 @@ const Freecell = struct {
                 f.foundations.set(suit, card.rank);
             },
         }
+        return true;
     }
 
     pub fn init(seed: u64) Freecell {
@@ -269,11 +302,17 @@ const App = struct {
     freecell: Freecell,
     mouse_pressed_prev_frame: bool,
     drag: ?DragState,
+    animation: ?AnimationState,
 
     const DragState = struct {
         offset_x: i32,
         offset_y: i32,
         top_card_pos: Freecell.CardPos, // position of card that was moved
+    };
+
+    const AnimationState = struct {
+        from: Freecell.CardPos,
+        begin_time: f32,
     };
 
     pub fn init(main_image: d2.Image) App {
@@ -282,8 +321,11 @@ const App = struct {
             .freecell = Freecell.init(wasm.seed()),
             .mouse_pressed_prev_frame = false,
             .drag = null,
+            .animation = null,
         };
     }
+
+    const animation_time = 300;
 
     const card_w = 88;
     const card_h = 124;
@@ -389,30 +431,53 @@ const App = struct {
         return null;
     }
 
-    pub fn frame(g: *App, mouse_x: i32, mouse_y: i32, mouse_inside: bool, mouse_pressed: bool) void {
+    pub fn frame(g: *App, mouse_x: i32, mouse_y: i32, mouse_inside: bool, mouse_pressed: bool, time: f32) void {
         const clicked = mouse_pressed and !g.mouse_pressed_prev_frame;
         g.mouse_pressed_prev_frame = mouse_pressed;
 
-        if (clicked) {
-            if (g.cardClickPos(mouse_x, mouse_y)) |pos| {
-                if (g.freecell.isMovable(pos)) {
-                    const card_region = g.cardRegionFromPos(pos);
-                    g.drag = .{
-                        .offset_x = mouse_x - card_region.x,
-                        .offset_y = mouse_y - card_region.y,
-                        .top_card_pos = pos,
+        if (g.animation) |anim| {
+            if (time - anim.begin_time >= animation_time) {
+                const card = g.freecell.cardsFromPos(anim.from).get(0);
+                _ = g.freecell.attemptMove(anim.from, .{ .foundation = @intFromEnum(card.suit) });
+                if (g.freecell.findFoundationAutomove()) |from_pos| {
+                    g.animation = .{
+                        .from = from_pos,
+                        .begin_time = time,
                     };
+                } else {
+                    g.animation = null;
                 }
             }
         }
-
-        if (!mouse_pressed) {
-            if (g.drag) |d| blk: {
-                const card_region: RectRegion = .{ .x = mouse_x - d.offset_x, .y = mouse_y - d.offset_y, .w = card_w, .h = card_h };
-                const to = g.cardDropPos(card_region) orelse break :blk;
-                g.freecell.attemptMove(d.top_card_pos, to);
+        if (g.animation == null) {
+            if (clicked) {
+                if (g.cardClickPos(mouse_x, mouse_y)) |pos| {
+                    if (g.freecell.isMovable(pos)) {
+                        const card_region = g.cardRegionFromPos(pos);
+                        g.drag = .{
+                            .offset_x = mouse_x - card_region.x,
+                            .offset_y = mouse_y - card_region.y,
+                            .top_card_pos = pos,
+                        };
+                    }
+                }
             }
-            g.drag = null;
+
+            if (!mouse_pressed) {
+                if (g.drag) |d| blk: {
+                    const card_region: RectRegion = .{ .x = mouse_x - d.offset_x, .y = mouse_y - d.offset_y, .w = card_w, .h = card_h };
+                    const to = g.cardDropPos(card_region) orelse break :blk;
+                    if (g.freecell.attemptMove(d.top_card_pos, to)) {
+                        if (g.freecell.findFoundationAutomove()) |from_pos| {
+                            g.animation = .{
+                                .from = from_pos,
+                                .begin_time = time,
+                            };
+                        }
+                    }
+                }
+                g.drag = null;
+            }
         }
 
         // draw
@@ -431,6 +496,7 @@ const App = struct {
         for (g.freecell.cascades, 0..) |cascade, i| {
             for (cascade.slice(), 0..) |card, j| {
                 if (g.drag) |d| if (d.top_card_pos == .cascade and d.top_card_pos.cascade[0] == i and d.top_card_pos.cascade[1] == j) break;
+                if (g.animation) |anim| if (anim.from == .cascade and anim.from.cascade[0] == i and anim.from.cascade[1] == j) break;
                 const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + main_board_x_shift;
                 const y = @as(i32, @intCast(j)) * card_y_shift + main_board_y_shift;
                 g.canvas.drawSprite(x, y, cardToSprite(card));
@@ -445,6 +511,7 @@ const App = struct {
 
         for (0..4) |i| {
             if (g.drag) |d| if (d.top_card_pos == .open_slot and d.top_card_pos.open_slot == i) continue;
+            if (g.animation) |anim| if (anim.from == .open_slot and anim.from.open_slot == i) continue;
             if (g.freecell.open_slots[i]) |card| {
                 const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + top_line_x;
                 const y = top_line_y;
@@ -480,6 +547,34 @@ const App = struct {
                 const y = @as(i32, @intCast(j)) * card_y_shift + card_off_y;
                 g.canvas.drawSprite(x, y, cardToSprite(card));
             }
+        }
+
+        if (g.animation) |anim| {
+            const card = g.freecell.cardsFromPos(anim.from).get(0);
+            const from_region: RectRegion = switch (anim.from) {
+                .cascade => |ij| blk: {
+                    const x = @as(i32, @intCast(ij[0])) * (card_w + card_x_gap) + main_board_x_shift;
+                    const y = @as(i32, @intCast(ij[1])) * card_y_shift + main_board_y_shift;
+                    break :blk .{ .x = x, .y = y, .w = card_w, .h = card_h };
+                },
+                .open_slot => |i| blk: {
+                    const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + top_line_x;
+                    const y = top_line_y;
+                    break :blk .{ .x = x, .y = y, .w = card_w, .h = card_h };
+                },
+                .foundation => unreachable,
+            };
+            const to_region: RectRegion = blk: {
+                const i: i32 = @intFromEnum(card.suit);
+                const x = (i + 4) * (card_w + card_x_gap) + top_line_x;
+                const y = top_line_y;
+                break :blk .{ .x = x, .y = y, .w = card_w, .h = card_h };
+            };
+
+            const t = (time - anim.begin_time) / animation_time;
+            const x: i32 = @intFromFloat(@floor(std.math.lerp(@as(f32, @floatFromInt(from_region.x)), @as(f32, @floatFromInt(to_region.x)), t)));
+            const y: i32 = @intFromFloat(@floor(std.math.lerp(@as(f32, @floatFromInt(from_region.y)), @as(f32, @floatFromInt(to_region.y)), t)));
+            g.canvas.drawSprite(x, y, cardToSprite(card));
         }
 
         if (mouse_inside) {

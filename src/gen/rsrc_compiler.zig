@@ -55,7 +55,7 @@ pub fn main() !void {
         var tmp_w: i32 = -1;
         var tmp_h: i32 = -1;
         var image_n: i32 = -1;
-        var image_ptr = c.stbi_load("rsrc/aux.png", &tmp_w, &tmp_h, &image_n, 4) orelse @panic("image load failure");
+        var image_ptr = c.stbi_load("rsrc/aux-88x124.png", &tmp_w, &tmp_h, &image_n, 4) orelse @panic("image load failure");
 
         var image_w: usize = @intCast(tmp_w);
         var image_h: usize = @intCast(tmp_h);
