@@ -120,6 +120,39 @@ pub fn main() !void {
         }
     }
 
+    { // aux
+        const text_w = 32;
+        const text_h = 32;
+
+        var tmp_w: i32 = -1;
+        var tmp_h: i32 = -1;
+        var image_n: i32 = -1;
+        var image_ptr = c.stbi_load("rsrc/text-32x32.png", &tmp_w, &tmp_h, &image_n, 4) orelse @panic("image load failure");
+
+        var image_w: usize = @intCast(tmp_w);
+        var image_h: usize = @intCast(tmp_h);
+
+        std.debug.print("image loaded: w: {}, h: {}, n: {}\n", .{ image_w, image_h, image_n });
+
+        var image_data = image_ptr[0 .. 4 * image_w * image_h];
+        defer c.stbi_image_free(image_ptr);
+
+        if (text_w != image_w or text_h * 26 != image_h) {
+            @panic("loaded image unexpected size");
+        }
+
+        for ('a'..('z' + 1), 0..) |letter, i| {
+            const x = 0;
+            const y = i * text_h;
+
+            var buf: [256]u8 = undefined;
+            const out = try std.fmt.bufPrint(&buf, "text_{s} {} {}\n", .{ [1]u8{@intCast(letter)}, text_w, text_w });
+            try data_info_file.writeAll(out);
+
+            try copyToFile(data_file, image_data, image_w, image_h, x, y, text_w, text_w);
+        }
+    }
+
     {
         var tmp_w: i32 = -1;
         var tmp_h: i32 = -1;

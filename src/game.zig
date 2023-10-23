@@ -133,6 +133,13 @@ const Freecell = struct {
         cascade: struct { u8, u8 },
     };
 
+    pub fn isWin(f: *Freecell) bool {
+        for (std.enums.values(Card.Suit)) |suit| {
+            if (f.foundations.get(suit) != .k) return false;
+        }
+        return true;
+    }
+
     fn isAutomove(f: *Freecell, card: Card) bool {
         if (f.foundations.get(card.suit)) |rank| {
             if (card.rank == .@"2") return true;
@@ -311,6 +318,7 @@ const App = struct {
     freecell: Freecell,
     mouse_pressed_prev_frame: bool,
     fullscreen: bool, // must keep in synced with js world
+    win: bool, // set when game is finished
     current_game_seed: u32,
     drag: ?DragState,
     animation: ?AnimationState,
@@ -334,6 +342,7 @@ const App = struct {
             .current_game_seed = seed,
             .mouse_pressed_prev_frame = false,
             .drag = null,
+            .win = false,
             .fullscreen = false,
             .animation = null,
         };
@@ -351,11 +360,13 @@ const App = struct {
         g.resetUI();
         const seed = wasm.seed();
         g.freecell = Freecell.init(seed);
+        g.win = false;
         g.current_game_seed = seed;
     }
 
     fn restartGame(g: *App) void {
         g.resetUI();
+        g.win = false;
         g.freecell = Freecell.init(g.current_game_seed);
     }
 
@@ -486,6 +497,10 @@ const App = struct {
         const clicked = mouse_pressed and !g.mouse_pressed_prev_frame;
         g.mouse_pressed_prev_frame = mouse_pressed;
 
+        if (g.freecell.isWin()) {
+            g.win = true;
+        }
+
         if (g.animation) |anim| {
             if (time - anim.begin_time >= animation_time) {
                 const card = g.freecell.cardsFromPos(anim.from).get(0);
@@ -550,23 +565,45 @@ const App = struct {
         // draw
 
         const BOARD_COLOR: d2.RGBA = .{ .r = 0x00, .g = 0x80, .b = 0x00, .a = 0xFF };
+        const MAIN_BOARD_COLOR: d2.RGBA = .{ .r = 0x00, .g = 0x70, .b = 0x00, .a = 0xFF };
         const HIGHLIGHT_COLOR: d2.RGBA = .{ .r = 0x00, .g = 0x50, .b = 0x00, .a = 0xFF };
+        const LIGHT_HIGHLIGHT_COLOR: d2.RGBA = .{ .r = 0x00, .g = 0xD7, .b = 0x00, .a = 0xFF };
+        const GOLD_COLOR: d2.RGBA = .{ .r = 0xFF, .g = 0xD7, .b = 0x00, .a = 0xFF };
 
         g.canvas.drawColor(BOARD_COLOR);
 
+        {
+            const border1 = 14;
+            const border2 = border1 + 2;
+            const y_off = 50;
+            const x = main_board_x_shift;
+            const y = main_board_y_shift;
+            g.canvas.drawRect(x - border2, y - border2, main_board_width + 2 * border2, height - y - 2 * border1 - y_off, d2.RGBA.BLACK);
+            g.canvas.drawRect(x - border1, y - border1, main_board_width + 2 * border1, height - y - 2 * border2 - y_off, MAIN_BOARD_COLOR);
+        }
+
         for (g.freecell.cascades, 0..) |cascade, i| {
+            var draw_cards: usize = 0;
             for (cascade.slice(), 0..) |card, j| {
                 if (g.drag) |d| if (d.top_card_pos == .cascade and d.top_card_pos.cascade[0] == i and d.top_card_pos.cascade[1] == j) break;
                 if (g.animation) |anim| if (anim.from == .cascade and anim.from.cascade[0] == i and anim.from.cascade[1] == j) break;
                 const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + main_board_x_shift;
                 const y = @as(i32, @intCast(j)) * card_y_shift + main_board_y_shift;
                 g.canvas.drawSprite(x, y, cardToSprite(card));
+                draw_cards += 1;
+            }
+            if (draw_cards == 0) {
+                const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + main_board_x_shift;
+                const y = main_board_y_shift;
+                g.canvas.drawRect(x, y, card_w, card_h, HIGHLIGHT_COLOR);
             }
         }
 
         for (0..4) |i| {
             const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + top_line_x;
             const y = top_line_y;
+            const light_border = 1;
+            g.canvas.drawRect(x - light_border, y - light_border, card_w + 2 * light_border, card_h + 2 * light_border, LIGHT_HIGHLIGHT_COLOR);
             g.canvas.drawRect(x, y, card_w, card_h, HIGHLIGHT_COLOR);
         }
 
@@ -583,6 +620,8 @@ const App = struct {
         for (4..8) |i| {
             const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + top_line_x;
             const y = top_line_y;
+            const gold_border = 1;
+            g.canvas.drawRect(x - gold_border, y - gold_border, card_w + 2 * gold_border, card_h + 2 * gold_border, GOLD_COLOR);
             g.canvas.drawRect(x, y, card_w, card_h, HIGHLIGHT_COLOR);
         }
 
@@ -664,6 +703,23 @@ const App = struct {
                 } else {
                     g.canvas.drawSprite(fullscreen_region.x, fullscreen_region.y, d2.Sprites.fullscreen_off);
                 }
+            }
+        }
+
+        if (g.win) {
+            const text_w = 32;
+            const gap = 4;
+            // const text_h = 32;
+            const letters = [_]?d2.Sprites{ .text_y, .text_o, .text_u, null, .text_w, .text_i, .text_n };
+            const text_all_w = @as(i32, @intCast(letters.len)) * (text_w + gap) - gap;
+            const text_shift_x = @divTrunc(width - text_all_w, 2);
+            for (letters, 0..) |sprite, i| {
+                if (sprite == null) continue;
+                const x = @as(i32, @intCast(i)) * (text_w + gap) + text_shift_x;
+                const delta = time / 300 + @as(f32, @floatFromInt(i)) / 2;
+                const A = 10;
+                const y: i32 = @as(i32, @intFromFloat(@trunc(std.math.sin(delta) * A))) + main_board_y_shift + 200;
+                g.canvas.drawSprite(x, y, sprite.?);
             }
         }
 
