@@ -54,4 +54,12 @@ spades_foundation 88 124
 hearts_foundation 88 124
 diamonds_foundation 88 124
 clubs_foundation 88 124
+fullscreen_on 50 50
+fullscreen_on_hover 50 50
+fullscreen_off 50 50
+fullscreen_off_hover 50 50
+new_game 125 50
+new_game_hover 125 50
+restart_game 165 50
+restart_game_hover 165 50
 cursor 28 38

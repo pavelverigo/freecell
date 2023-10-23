@@ -9,9 +9,18 @@ pub fn init(main_image: d2.Image) void {
     game = App.init(main_image);
 }
 
+pub fn resize(new_image: d2.Image) void {
+    game.resize(new_image);
+}
+
 // Called every frame
 pub fn frame(mouse_x: i32, mouse_y: i32, mouse_inside: bool, mouse_pressed: bool, time: f32) void {
     game.frame(mouse_x, mouse_y, mouse_inside, mouse_pressed, time);
+}
+
+// Fullscreen status changed from outside
+pub fn fullscreen_mode(mode: bool) void {
+    game.fullscreen_mode(mode);
 }
 
 const Card = struct {
@@ -301,6 +310,8 @@ const App = struct {
     canvas: d2.Canvas,
     freecell: Freecell,
     mouse_pressed_prev_frame: bool,
+    fullscreen: bool, // must keep in synced with js world
+    current_game_seed: u32,
     drag: ?DragState,
     animation: ?AnimationState,
 
@@ -316,16 +327,51 @@ const App = struct {
     };
 
     pub fn init(main_image: d2.Image) App {
+        const seed = wasm.seed();
         return .{
             .canvas = .{ .backed_image = main_image },
-            .freecell = Freecell.init(wasm.seed()),
+            .freecell = Freecell.init(seed),
+            .current_game_seed = seed,
             .mouse_pressed_prev_frame = false,
             .drag = null,
+            .fullscreen = false,
             .animation = null,
         };
     }
 
-    const animation_time = 300;
+    pub fn fullscreen_mode(g: *App, mode: bool) void {
+        g.fullscreen = mode;
+    }
+
+    pub fn resize(g: *App, new_image: d2.Image) void {
+        g.canvas = .{ .backed_image = new_image };
+    }
+
+    fn newGame(g: *App) void {
+        g.resetUI();
+        const seed = wasm.seed();
+        g.freecell = Freecell.init(seed);
+        g.current_game_seed = seed;
+    }
+
+    fn restartGame(g: *App) void {
+        g.resetUI();
+        g.freecell = Freecell.init(g.current_game_seed);
+    }
+
+    fn resetUI(g: *App) void {
+        g.mouse_pressed_prev_frame = false;
+        g.drag = null;
+        g.animation = null;
+    }
+
+    const animation_time = 300; // ms
+
+    const ui_height = 50;
+    const ui_fullscreen_w = 50;
+    const ui_new_game_w = 125;
+    const ui_restart_game_w = 165;
+    const ui_shift = 25;
 
     const card_w = 88;
     const card_h = 124;
@@ -432,6 +478,11 @@ const App = struct {
     }
 
     pub fn frame(g: *App, mouse_x: i32, mouse_y: i32, mouse_inside: bool, mouse_pressed: bool, time: f32) void {
+        const width = g.canvas.width();
+        const height = g.canvas.height();
+        const main_board_x_shift = @divTrunc(width - main_board_width, 2);
+        const top_line_x = main_board_x_shift;
+
         const clicked = mouse_pressed and !g.mouse_pressed_prev_frame;
         g.mouse_pressed_prev_frame = mouse_pressed;
 
@@ -461,6 +512,22 @@ const App = struct {
                         };
                     }
                 }
+                { // ui
+                    wasm.print("click", .{});
+                    var new_game_region: RectRegion = .{ .x = ui_shift, .y = height - ui_shift - ui_height, .w = ui_new_game_w, .h = ui_height };
+                    var restart_game_region: RectRegion = .{ .x = 2 * ui_shift + ui_new_game_w, .y = height - ui_shift - ui_height, .w = ui_restart_game_w, .h = ui_height };
+                    var fullscreen_region: RectRegion = .{ .x = width - ui_shift - ui_fullscreen_w, .y = height - ui_shift - ui_height, .w = ui_fullscreen_w, .h = ui_height };
+                    if (new_game_region.inside(mouse_x, mouse_y)) {
+                        g.newGame();
+                    }
+                    if (restart_game_region.inside(mouse_x, mouse_y)) {
+                        g.restartGame();
+                    }
+                    if (fullscreen_region.inside(mouse_x, mouse_y)) {
+                        wasm.fullscreen(!g.fullscreen);
+                        g.fullscreen = !g.fullscreen;
+                    }
+                }
             }
 
             if (!mouse_pressed) {
@@ -484,12 +551,6 @@ const App = struct {
 
         const BOARD_COLOR: d2.RGBA = .{ .r = 0x00, .g = 0x80, .b = 0x00, .a = 0xFF };
         const HIGHLIGHT_COLOR: d2.RGBA = .{ .r = 0x00, .g = 0x50, .b = 0x00, .a = 0xFF };
-
-        const width = g.canvas.width();
-        const height = g.canvas.height();
-        _ = height;
-        const main_board_x_shift = @divTrunc(width - main_board_width, 2);
-        const top_line_x = main_board_x_shift;
 
         g.canvas.drawColor(BOARD_COLOR);
 
@@ -575,6 +636,35 @@ const App = struct {
             const x: i32 = @intFromFloat(@floor(std.math.lerp(@as(f32, @floatFromInt(from_region.x)), @as(f32, @floatFromInt(to_region.x)), t)));
             const y: i32 = @intFromFloat(@floor(std.math.lerp(@as(f32, @floatFromInt(from_region.y)), @as(f32, @floatFromInt(to_region.y)), t)));
             g.canvas.drawSprite(x, y, cardToSprite(card));
+        }
+
+        { // ui draw
+            var new_game_region: RectRegion = .{ .x = ui_shift, .y = height - ui_shift - ui_height, .w = ui_new_game_w, .h = ui_height };
+            var restart_game_region: RectRegion = .{ .x = 2 * ui_shift + ui_new_game_w, .y = height - ui_shift - ui_height, .w = ui_restart_game_w, .h = ui_height };
+            var fullscreen_region: RectRegion = .{ .x = width - ui_shift - ui_fullscreen_w, .y = height - ui_shift - ui_height, .w = ui_fullscreen_w, .h = ui_height };
+            if (new_game_region.inside(mouse_x, mouse_y)) {
+                g.canvas.drawSprite(new_game_region.x, new_game_region.y, d2.Sprites.new_game_hover);
+            } else {
+                g.canvas.drawSprite(new_game_region.x, new_game_region.y, d2.Sprites.new_game);
+            }
+            if (restart_game_region.inside(mouse_x, mouse_y)) {
+                g.canvas.drawSprite(restart_game_region.x, restart_game_region.y, d2.Sprites.restart_game_hover);
+            } else {
+                g.canvas.drawSprite(restart_game_region.x, restart_game_region.y, d2.Sprites.restart_game);
+            }
+            if (fullscreen_region.inside(mouse_x, mouse_y)) {
+                if (!g.fullscreen) {
+                    g.canvas.drawSprite(fullscreen_region.x, fullscreen_region.y, d2.Sprites.fullscreen_on_hover);
+                } else {
+                    g.canvas.drawSprite(fullscreen_region.x, fullscreen_region.y, d2.Sprites.fullscreen_off_hover);
+                }
+            } else {
+                if (!g.fullscreen) {
+                    g.canvas.drawSprite(fullscreen_region.x, fullscreen_region.y, d2.Sprites.fullscreen_on);
+                } else {
+                    g.canvas.drawSprite(fullscreen_region.x, fullscreen_region.y, d2.Sprites.fullscreen_off);
+                }
+            }
         }
 
         if (mouse_inside) {

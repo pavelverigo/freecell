@@ -1,39 +1,37 @@
 const canvas = document.getElementById("canvas");
-const width = canvas.width;
-const height = canvas.height;
+const init_w = canvas.width;
+const init_h = canvas.height;
+let width = canvas.width;
+let height = canvas.height;
 let fullscreen = false;
 
 const ctx = canvas.getContext("2d");
 
-// // Toggle fullscreen
-// function toggleFullscreen() {
-//     if (!fullscreen) {
-//         if (canvas.requestFullscreen) {
-//             canvas.requestFullscreen();
-//         }
-//         canvas.width = window.innerWidth;
-//         canvas.height = window.innerHeight;
-//     } else {
-//         if (document.exitFullscreen) {
-//             document.exitFullscreen();
-//         }
-//         canvas.width = width;
-//         canvas.height = height;
-//     }
-//     fullscreen = !fullscreen;
-// }
+function fullscreenMode(mode) {
+    fullscreen = mode;
+    if (fullscreen) {
+        if (canvas.requestFullscreen) {
+            canvas.requestFullscreen();
+        }
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        resize(canvas.width, canvas.height);
+    } else {
+        if (document.exitFullscreen) {
+            document.exitFullscreen();
+        }
+    }
+}
 
-// document.addEventListener("keydown", (event) =>{
-//     if (event.key === "Escape") {
-//         toggleFullscreen();
-//     }
-// });
+function toggleFullscreen() {
+    fullscreenMode(!fullscreen);
+}
 
 let memory = null;
 const imports = {
     env: {
-        textout: (result) => { 
-            document.getElementById("text").innerHTML = `Print: ${result}`;
+        _fullscreen: (val) => {
+            fullscreenMode(val != 0);
         },
 
         _seed: () => {
@@ -50,20 +48,36 @@ const imports = {
 const wasm = await WebAssembly.instantiateStreaming(fetch("zig-out/lib/freecell.wasm"), imports);
 memory = wasm.instance.exports.memory;
 
-const add = wasm.instance.exports.add;
-add(1, 2);
-
 const _init = wasm.instance.exports._init;
 const _frame = wasm.instance.exports._frame;
+const _resize = wasm.instance.exports._resize;
+const _fullscreen_mode = wasm.instance.exports._fullscreen_mode;
 
-const image_ptr = _init(width, height);
-const imageDataArray = new Uint8ClampedArray(memory.buffer, image_ptr, 4 * width * height);
-const imageData = new ImageData(imageDataArray, width, height);
+let image_ptr = _init(width, height);
+let imageDataArray = new Uint8ClampedArray(memory.buffer, image_ptr, 4 * width * height);
+let imageData = new ImageData(imageDataArray, width, height);
+
+function resize(nwidth, nheight) {
+    width = nwidth;
+    height = nheight;
+    image_ptr = _resize(width, height);
+    imageDataArray = new Uint8ClampedArray(memory.buffer, image_ptr, 4 * width * height);
+    imageData = new ImageData(imageDataArray, width, height);
+}
 
 let mouseX = 0;
 let mouseY = 0;
 let mousePressed = false;
 let mouseInside = false;
+
+document.addEventListener("fullscreenchange", function() {
+    if (document.fullscreenElement === null) {
+        canvas.width = init_w;
+        canvas.height = init_h;
+        resize(canvas.width, canvas.height);
+        _fullscreen_mode(false);
+    }
+});
 
 canvas.addEventListener('mousemove', (e) => {
     let rect = canvas.getBoundingClientRect();
@@ -73,13 +87,20 @@ canvas.addEventListener('mousemove', (e) => {
 });
 
 canvas.addEventListener('mouseout', () => {
+    mousePressed = false;
     mouseInside = false;
 });
 
 canvas.addEventListener('mousedown', (e) => {
     if (e.button === 0) {
+        console.log("button")
         mousePressed = true;
     }
+    e.preventDefault();
+});
+
+canvas.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
 });
 
 canvas.addEventListener('mouseup', (e) => {

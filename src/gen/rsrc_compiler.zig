@@ -84,6 +84,42 @@ pub fn main() !void {
         }
     }
 
+    { // aux
+        var ui_names = [_][]const u8{ "fullscreen_on", "fullscreen_on_hover", "fullscreen_off", "fullscreen_off_hover", "new_game", "new_game_hover", "restart_game", "restart_game_hover" };
+        var ui_width = [_]usize{ 50, 50, 50, 50, 125, 125, 165, 165 };
+        const ui_height = 50;
+
+        var tmp_w: i32 = -1;
+        var tmp_h: i32 = -1;
+        var image_n: i32 = -1;
+        var image_ptr = c.stbi_load("rsrc/ui-height50.png", &tmp_w, &tmp_h, &image_n, 4) orelse @panic("image load failure");
+
+        var image_w: usize = @intCast(tmp_w);
+        var image_h: usize = @intCast(tmp_h);
+
+        std.debug.print("image loaded: w: {}, h: {}, n: {}\n", .{ image_w, image_h, image_n });
+
+        var image_data = image_ptr[0 .. 4 * image_w * image_h];
+        defer c.stbi_image_free(image_ptr);
+
+        if (780 != image_w or 50 != image_h) {
+            @panic("loaded image unexpected size");
+        }
+
+        var x: usize = 0;
+        for (ui_names, ui_width) |name, w| {
+            const y = 0;
+
+            var buf: [256]u8 = undefined;
+            const out = try std.fmt.bufPrint(&buf, "{s} {} {}\n", .{ name, w, ui_height });
+            try data_info_file.writeAll(out);
+
+            try copyToFile(data_file, image_data, image_w, image_h, x, y, w, ui_height);
+
+            x += w;
+        }
+    }
+
     {
         var tmp_w: i32 = -1;
         var tmp_h: i32 = -1;
