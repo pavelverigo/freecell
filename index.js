@@ -5,6 +5,9 @@ let width = canvas.width;
 let height = canvas.height;
 let fullscreen = false;
 
+const win_audio = new Audio("/audio/Victory SoundFX5.wav");
+const card_audio = new Audio("/audio/cardSlide1.wav");
+
 const ctx = canvas.getContext("2d");
 
 function fullscreenMode(mode) {
@@ -36,6 +39,14 @@ const imports = {
 
         _seed: () => {
             return Math.floor(Math.random() * 0xFFFFFFFF);
+        },
+
+        _win_sound: () => {
+            win_audio.play();
+        },
+
+        _card_sound: () => {
+            card_audio.play();
         },
 
         _print: (pointer, length) => { 
@@ -123,3 +134,10 @@ function frame() {
 }
 
 frame();
+
+const audio = new Audio("/audio/Victory SoundFX5.wav");
+const button = document.getElementById("btn");
+
+button.addEventListener("click", () => {
+    audio.play();
+});

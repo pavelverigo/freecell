@@ -8,6 +8,9 @@ pub fn fullscreen(mode: bool) void {
     _fullscreen(mode);
 }
 
+pub extern fn _win_sound() void;
+pub extern fn _card_sound() void;
+
 extern fn _print(usize, usize) void;
 
 pub fn print(comptime fmt: []const u8, args: anytype) void {

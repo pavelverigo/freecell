@@ -513,8 +513,9 @@ const App = struct {
         const clicked = mouse_pressed and !g.mouse_pressed_prev_frame;
         g.mouse_pressed_prev_frame = mouse_pressed;
 
-        if (g.freecell.isWin()) {
+        if (!g.win and g.freecell.isWin()) {
             g.win = true;
+            wasm._win_sound();
         }
 
         if (g.animation) |anim| {
@@ -522,6 +523,7 @@ const App = struct {
                 const card = g.freecell.cardsFromPos(anim.from).get(0);
                 _ = g.freecell.attemptMove(anim.from, .{ .foundation = @intFromEnum(card.suit) });
                 if (g.freecell.findFoundationAutomove()) |from_pos| {
+                    wasm._card_sound();
                     g.animation = .{
                         .from = from_pos,
                         .begin_time = time,
@@ -571,6 +573,7 @@ const App = struct {
                     const to = g.cardDropPos(card_region) orelse break :blk;
                     if (g.freecell.attemptMove(d.top_card_pos, to)) {
                         if (g.freecell.findFoundationAutomove()) |from_pos| {
+                            wasm._card_sound();
                             g.animation = .{
                                 .from = from_pos,
                                 .begin_time = time,
