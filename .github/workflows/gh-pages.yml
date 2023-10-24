@@ -33,6 +33,9 @@ jobs:
         with:
           version: 0.12.0-dev.1253+b798aaf49
       - run: zig build -Doptimize=ReleaseFast -p _site/zig-out/
+      - run: cp index.js _site/
+      - run: cp index.html _site/
+      - run: cp -r audio/ _site/
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v2
 
