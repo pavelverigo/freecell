@@ -25,7 +25,7 @@ pub const Image = struct {
     h: i32,
 };
 
-fn imageDrawImage(dest: Image, dx: i32, dy: i32, src: Image, sx: i32, sy: i32, w: i32, h: i32) void {
+fn imageDrawImage(dest: Image, dx: i32, dy: i32, src: Image, sx: i32, sy: i32, w: i32, h: i32, dark_blend: ?f32) void {
     const start_offset_x = @max(-dx, -sx, 0);
     const end_offset_x = @max(@min(dest.w - dx, src.w - sx, w), 0);
 
@@ -41,7 +41,15 @@ fn imageDrawImage(dest: Image, dx: i32, dy: i32, src: Image, sx: i32, sy: i32, w
 
             // TODO better alpha handling
             if (src.data[j].a == 0xFF) {
-                dest.data[i] = src.data[j];
+                if (dark_blend) |blend| {
+                    const r: u8 = @intFromFloat(@as(f32, @floatFromInt(src.data[j].r)) / blend);
+                    const g: u8 = @intFromFloat(@as(f32, @floatFromInt(src.data[j].g)) / blend);
+                    const b: u8 = @intFromFloat(@as(f32, @floatFromInt(src.data[j].b)) / blend);
+
+                    dest.data[i] = .{ .r = r, .g = g, .b = b, .a = src.data[j].a };
+                } else {
+                    dest.data[i] = src.data[j];
+                }
             }
 
             offset_x += 1;
@@ -73,7 +81,7 @@ fn imageDrawRect(dest: Image, x: i32, y: i32, w: i32, h: i32, color: RGBA) void 
 }
 
 const genSpritesData = blk: {
-    @setEvalBranchQuota(10000);
+    @setEvalBranchQuota(20000);
 
     const sprites_info = @embedFile("gen/sprites.info");
 
@@ -159,9 +167,9 @@ pub const Canvas = struct {
         imageDrawRect(self.backed_image, x, y, w, h, color);
     }
 
-    pub fn drawSprite(self: *Canvas, x: i32, y: i32, sprite: Sprites) void {
+    pub fn drawSprite(self: *Canvas, x: i32, y: i32, sprite: Sprites, dark_blend: ?f32) void {
         var sprite_image = sprites_image.get(sprite);
-        imageDrawImage(self.backed_image, x, y, sprite_image, 0, 0, sprite_image.w, sprite_image.h);
+        imageDrawImage(self.backed_image, x, y, sprite_image, 0, 0, sprite_image.w, sprite_image.h, dark_blend);
     }
 
     pub fn width(self: *Canvas) i32 {

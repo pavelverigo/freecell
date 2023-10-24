@@ -85,8 +85,26 @@ pub fn main() !void {
     }
 
     { // aux
-        var ui_names = [_][]const u8{ "fullscreen_on", "fullscreen_on_hover", "fullscreen_off", "fullscreen_off_hover", "new_game", "new_game_hover", "restart_game", "restart_game_hover" };
-        var ui_width = [_]usize{ 50, 50, 50, 50, 125, 125, 165, 165 };
+        var ui_names = [_][]const u8{
+            "fullscreen_on",
+            "fullscreen_on_hover",
+            "fullscreen_off",
+            "fullscreen_off_hover",
+            "new_game",
+            "new_game_hover",
+            "restart_game",
+            "restart_game_hover",
+            "highlight_on",
+            "highlight_off",
+            "highlight_on_hover",
+            "highlight_off_hover",
+        };
+        const ui_width = [_]usize{ 50, 50, 50, 50, 125, 125, 165, 165, 250, 250, 250, 250 };
+        const ui_width_sum = comptime blk: {
+            var tmp = 0;
+            for (ui_width) |w| tmp += w;
+            break :blk tmp;
+        };
         const ui_height = 50;
 
         var tmp_w: i32 = -1;
@@ -102,7 +120,7 @@ pub fn main() !void {
         var image_data = image_ptr[0 .. 4 * image_w * image_h];
         defer c.stbi_image_free(image_ptr);
 
-        if (780 != image_w or 50 != image_h) {
+        if (ui_width_sum != image_w or ui_height != image_h) {
             @panic("loaded image unexpected size");
         }
 

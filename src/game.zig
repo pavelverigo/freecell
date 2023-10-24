@@ -181,15 +181,28 @@ const Freecell = struct {
                 const cascade = f.cascades[i];
                 var j = ij[1];
                 const len: usize = cascade.len;
+                var cnt: usize = 1;
                 while (j + 1 < len) {
                     const card1 = cascade.get(j);
                     const card2 = cascade.get(j + 1);
                     if (!(card1.suit.isOppositeColor(card2.suit) and card1.rank.diff(card2.rank) == 1)) {
                         return false;
                     }
+                    cnt += 1;
                     j += 1;
                 }
-                return true;
+                var limit = blk: {
+                    var n: usize = 1;
+                    for (0..8) |k| {
+                        if (f.cascades[k].len == 0) n *= 2;
+                    }
+                    var m: usize = 1;
+                    for (0..4) |k| {
+                        if (f.open_slots[k] == null) m += 1;
+                    }
+                    break :blk n * m;
+                };
+                return cnt <= limit;
             },
         }
     }
@@ -319,6 +332,7 @@ const App = struct {
     mouse_pressed_prev_frame: bool,
     fullscreen: bool, // must keep in synced with js world
     win: bool, // set when game is finished
+    highlight_moves: bool,
     current_game_seed: u32,
     drag: ?DragState,
     animation: ?AnimationState,
@@ -343,6 +357,7 @@ const App = struct {
             .mouse_pressed_prev_frame = false,
             .drag = null,
             .win = false,
+            .highlight_moves = true,
             .fullscreen = false,
             .animation = null,
         };
@@ -382,6 +397,7 @@ const App = struct {
     const ui_fullscreen_w = 50;
     const ui_new_game_w = 125;
     const ui_restart_game_w = 165;
+    const ui_highlight_w = 250;
     const ui_shift = 25;
 
     const card_w = 88;
@@ -531,12 +547,16 @@ const App = struct {
                     wasm.print("click", .{});
                     var new_game_region: RectRegion = .{ .x = ui_shift, .y = height - ui_shift - ui_height, .w = ui_new_game_w, .h = ui_height };
                     var restart_game_region: RectRegion = .{ .x = 2 * ui_shift + ui_new_game_w, .y = height - ui_shift - ui_height, .w = ui_restart_game_w, .h = ui_height };
+                    var highlight_region: RectRegion = .{ .x = 3 * ui_shift + ui_new_game_w + ui_restart_game_w, .y = height - ui_shift - ui_height, .w = ui_highlight_w, .h = ui_height };
                     var fullscreen_region: RectRegion = .{ .x = width - ui_shift - ui_fullscreen_w, .y = height - ui_shift - ui_height, .w = ui_fullscreen_w, .h = ui_height };
                     if (new_game_region.inside(mouse_x, mouse_y)) {
                         g.newGame();
                     }
                     if (restart_game_region.inside(mouse_x, mouse_y)) {
                         g.restartGame();
+                    }
+                    if (highlight_region.inside(mouse_x, mouse_y)) {
+                        g.highlight_moves = !g.highlight_moves;
                     }
                     if (fullscreen_region.inside(mouse_x, mouse_y)) {
                         wasm.fullscreen(!g.fullscreen);
@@ -589,7 +609,16 @@ const App = struct {
                 if (g.animation) |anim| if (anim.from == .cascade and anim.from.cascade[0] == i and anim.from.cascade[1] == j) break;
                 const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + main_board_x_shift;
                 const y = @as(i32, @intCast(j)) * card_y_shift + main_board_y_shift;
-                g.canvas.drawSprite(x, y, cardToSprite(card));
+                if (g.highlight_moves) {
+                    const pos: Freecell.CardPos = .{ .cascade = .{ @intCast(i), @intCast(j) } };
+                    if (g.freecell.isMovable(pos)) {
+                        g.canvas.drawSprite(x, y, cardToSprite(card), null);
+                    } else {
+                        g.canvas.drawSprite(x, y, cardToSprite(card), 2.0);
+                    }
+                } else {
+                    g.canvas.drawSprite(x, y, cardToSprite(card), null);
+                }
                 draw_cards += 1;
             }
             if (draw_cards == 0) {
@@ -613,7 +642,7 @@ const App = struct {
             if (g.freecell.open_slots[i]) |card| {
                 const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + top_line_x;
                 const y = top_line_y;
-                g.canvas.drawSprite(x, y, cardToSprite(card));
+                g.canvas.drawSprite(x, y, cardToSprite(card), null);
             }
         }
 
@@ -630,9 +659,9 @@ const App = struct {
             const y = top_line_y;
 
             if (g.freecell.foundations.get(suit)) |rank| {
-                g.canvas.drawSprite(x, y, cardToSprite(.{ .suit = suit, .rank = rank }));
+                g.canvas.drawSprite(x, y, cardToSprite(.{ .suit = suit, .rank = rank }), null);
             } else {
-                g.canvas.drawSprite(x, y, suitToSprite(suit));
+                g.canvas.drawSprite(x, y, suitToSprite(suit), null);
             }
         }
 
@@ -645,7 +674,7 @@ const App = struct {
             for (cards.slice(), 0..) |card, j| {
                 const x = card_off_x;
                 const y = @as(i32, @intCast(j)) * card_y_shift + card_off_y;
-                g.canvas.drawSprite(x, y, cardToSprite(card));
+                g.canvas.drawSprite(x, y, cardToSprite(card), null);
             }
         }
 
@@ -674,34 +703,48 @@ const App = struct {
             const t = (time - anim.begin_time) / animation_time;
             const x: i32 = @intFromFloat(@floor(std.math.lerp(@as(f32, @floatFromInt(from_region.x)), @as(f32, @floatFromInt(to_region.x)), t)));
             const y: i32 = @intFromFloat(@floor(std.math.lerp(@as(f32, @floatFromInt(from_region.y)), @as(f32, @floatFromInt(to_region.y)), t)));
-            g.canvas.drawSprite(x, y, cardToSprite(card));
+            g.canvas.drawSprite(x, y, cardToSprite(card), null);
         }
 
         { // ui draw
             var new_game_region: RectRegion = .{ .x = ui_shift, .y = height - ui_shift - ui_height, .w = ui_new_game_w, .h = ui_height };
             var restart_game_region: RectRegion = .{ .x = 2 * ui_shift + ui_new_game_w, .y = height - ui_shift - ui_height, .w = ui_restart_game_w, .h = ui_height };
+            var highlight_region: RectRegion = .{ .x = 3 * ui_shift + ui_new_game_w + ui_restart_game_w, .y = height - ui_shift - ui_height, .w = ui_highlight_w, .h = ui_height };
             var fullscreen_region: RectRegion = .{ .x = width - ui_shift - ui_fullscreen_w, .y = height - ui_shift - ui_height, .w = ui_fullscreen_w, .h = ui_height };
             if (new_game_region.inside(mouse_x, mouse_y)) {
-                g.canvas.drawSprite(new_game_region.x, new_game_region.y, d2.Sprites.new_game_hover);
+                g.canvas.drawSprite(new_game_region.x, new_game_region.y, d2.Sprites.new_game_hover, null);
             } else {
-                g.canvas.drawSprite(new_game_region.x, new_game_region.y, d2.Sprites.new_game);
+                g.canvas.drawSprite(new_game_region.x, new_game_region.y, d2.Sprites.new_game, null);
             }
             if (restart_game_region.inside(mouse_x, mouse_y)) {
-                g.canvas.drawSprite(restart_game_region.x, restart_game_region.y, d2.Sprites.restart_game_hover);
+                g.canvas.drawSprite(restart_game_region.x, restart_game_region.y, d2.Sprites.restart_game_hover, null);
             } else {
-                g.canvas.drawSprite(restart_game_region.x, restart_game_region.y, d2.Sprites.restart_game);
+                g.canvas.drawSprite(restart_game_region.x, restart_game_region.y, d2.Sprites.restart_game, null);
+            }
+            if (highlight_region.inside(mouse_x, mouse_y)) {
+                if (!g.highlight_moves) {
+                    g.canvas.drawSprite(highlight_region.x, highlight_region.y, d2.Sprites.highlight_on_hover, null);
+                } else {
+                    g.canvas.drawSprite(highlight_region.x, highlight_region.y, d2.Sprites.highlight_off_hover, null);
+                }
+            } else {
+                if (!g.highlight_moves) {
+                    g.canvas.drawSprite(highlight_region.x, highlight_region.y, d2.Sprites.highlight_on, null);
+                } else {
+                    g.canvas.drawSprite(highlight_region.x, highlight_region.y, d2.Sprites.highlight_off, null);
+                }
             }
             if (fullscreen_region.inside(mouse_x, mouse_y)) {
                 if (!g.fullscreen) {
-                    g.canvas.drawSprite(fullscreen_region.x, fullscreen_region.y, d2.Sprites.fullscreen_on_hover);
+                    g.canvas.drawSprite(fullscreen_region.x, fullscreen_region.y, d2.Sprites.fullscreen_on_hover, null);
                 } else {
-                    g.canvas.drawSprite(fullscreen_region.x, fullscreen_region.y, d2.Sprites.fullscreen_off_hover);
+                    g.canvas.drawSprite(fullscreen_region.x, fullscreen_region.y, d2.Sprites.fullscreen_off_hover, null);
                 }
             } else {
                 if (!g.fullscreen) {
-                    g.canvas.drawSprite(fullscreen_region.x, fullscreen_region.y, d2.Sprites.fullscreen_on);
+                    g.canvas.drawSprite(fullscreen_region.x, fullscreen_region.y, d2.Sprites.fullscreen_on, null);
                 } else {
-                    g.canvas.drawSprite(fullscreen_region.x, fullscreen_region.y, d2.Sprites.fullscreen_off);
+                    g.canvas.drawSprite(fullscreen_region.x, fullscreen_region.y, d2.Sprites.fullscreen_off, null);
                 }
             }
         }
@@ -719,12 +762,12 @@ const App = struct {
                 const delta = time / 300 + @as(f32, @floatFromInt(i)) / 2;
                 const A = 10;
                 const y: i32 = @as(i32, @intFromFloat(@trunc(std.math.sin(delta) * A))) + main_board_y_shift + 200;
-                g.canvas.drawSprite(x, y, sprite.?);
+                g.canvas.drawSprite(x, y, sprite.?, null);
             }
         }
 
         if (mouse_inside) {
-            g.canvas.drawSprite(mouse_x, mouse_y, d2.Sprites.cursor);
+            g.canvas.drawSprite(mouse_x, mouse_y, d2.Sprites.cursor, null);
         }
 
         g.canvas.finalize();
