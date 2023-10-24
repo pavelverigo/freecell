@@ -546,7 +546,6 @@ const App = struct {
                     }
                 }
                 { // ui
-                    wasm.print("click", .{});
                     var new_game_region: RectRegion = .{ .x = ui_shift, .y = height - ui_shift - ui_height, .w = ui_new_game_w, .h = ui_height };
                     var restart_game_region: RectRegion = .{ .x = 2 * ui_shift + ui_new_game_w, .y = height - ui_shift - ui_height, .w = ui_restart_game_w, .h = ui_height };
                     var highlight_region: RectRegion = .{ .x = 3 * ui_shift + ui_new_game_w + ui_restart_game_w, .y = height - ui_shift - ui_height, .w = ui_highlight_w, .h = ui_height };
