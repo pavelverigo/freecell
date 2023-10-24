@@ -1,4 +1,4 @@
-# Freecell
+# Freecell (https://pavelverigo.github.io/freecell/)
 
 ```
 zig build
@@ -19,3 +19,6 @@ Winning font: https://zingot.itch.io/fontpack
 Winning audio: https://timbeek.itch.io/casual-soundfx-pack
 
 Card audio: https://www.kenney.nl/assets/casino-audio
+
+# Screenshot
+![Screenshot](image.png)

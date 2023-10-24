@@ -104,7 +104,6 @@ canvas.addEventListener('mouseout', () => {
 
 canvas.addEventListener('mousedown', (e) => {
     if (e.button === 0) {
-        console.log("button")
         mousePressed = true;
     }
     e.preventDefault();
