@@ -11,7 +11,7 @@ python3 -m http.server
 # Technical
 
 - Sprites embed directly into wasm binary
-- No WebGL, only software rendering, final image buffer is copied to <canvas>
+- No WebGL, only software rendering, final image buffer is copied to &lt;canvas&gt;
 - Zero dependecies, except stb_image for sprite compilation
 
 # Assets
