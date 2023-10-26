@@ -61,8 +61,8 @@ export fn _resize(w: i32, h: i32) [*]d2.RGBA {
     return main_image.data.ptr;
 }
 
-export fn _frame(mx: i32, my: i32, inside: bool, pressed: bool, time: f32) void {
-    game.frame(mx, my, inside, pressed, time);
+export fn _frame(mx: i32, my: i32, inside: bool, pressed: bool, time: f32, fps: f32) void {
+    game.frame(mx, my, inside, pressed, time, fps);
 }
 
 export fn _fullscreen_mode(mode: bool) void {

@@ -120,15 +120,17 @@ canvas.addEventListener('mouseup', (e) => {
     }
 });
 
-function frame() {
-    // const startTime = performance.now();
+let fps = 0.0;
 
-    _frame(mouseX, mouseY, mouseInside, mousePressed, performance.now());
+function frame() {
+    const startTime = performance.now();
+
+    _frame(mouseX, mouseY, mouseInside, mousePressed, performance.now(), fps);
     ctx.putImageData(imageData, 0, 0);
 
-    // const endTime = performance.now();
-    // const timeDifference = endTime - startTime;
-    // console.log(`${1000.0 / timeDifference} hz`);
+    const endTime = performance.now();
+    const timeDifference = endTime - startTime;
+    fps = 1000.0 / timeDifference;
 
     requestAnimationFrame(frame);
 }

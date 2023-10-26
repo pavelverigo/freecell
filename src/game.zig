@@ -14,8 +14,8 @@ pub fn resize(new_image: d2.Image) void {
 }
 
 // Called every frame
-pub fn frame(mouse_x: i32, mouse_y: i32, mouse_inside: bool, mouse_pressed: bool, time: f32) void {
-    game.frame(mouse_x, mouse_y, mouse_inside, mouse_pressed, time);
+pub fn frame(mouse_x: i32, mouse_y: i32, mouse_inside: bool, mouse_pressed: bool, time: f32, fps: f32) void {
+    game.frame(mouse_x, mouse_y, mouse_inside, mouse_pressed, time, fps);
 }
 
 // Fullscreen status changed from outside
@@ -332,10 +332,11 @@ const App = struct {
     mouse_pressed_prev_frame: bool,
     fullscreen: bool, // must keep in synced with js world
     win: bool, // set when game is finished
+    fps_accum: f32,
+    fps_cache: f32,
+    frame_cnt: usize,
     highlight_moves: bool,
     current_game_seed: u32,
-    last_time: ?f32,
-    fps: f32,
     drag: ?DragState,
     animation: ?AnimationState,
 
@@ -360,9 +361,10 @@ const App = struct {
             .current_game_seed = seed,
             .mouse_pressed_prev_frame = false,
             .drag = null,
-            .last_time = null,
-            .fps = 0.0,
             .win = false,
+            .fps_accum = 0,
+            .fps_cache = 0,
+            .frame_cnt = 0,
             .highlight_moves = true,
             .fullscreen = false,
             .animation = null,
@@ -510,12 +512,15 @@ const App = struct {
         return null;
     }
 
-    pub fn frame(g: *App, mouse_x: i32, mouse_y: i32, mouse_inside: bool, mouse_pressed: bool, time: f32) void {
-        if (g.last_time) |t| {
-            const cur = 1000.0 / (time - t);
-            g.fps = g.fps * 0.75 + 0.25 * cur;
+    pub fn frame(g: *App, mouse_x: i32, mouse_y: i32, mouse_inside: bool, mouse_pressed: bool, time: f32, fps: f32) void {
+        {
+            g.fps_accum = 0.80 * g.fps_accum + 0.20 * fps;
+            g.frame_cnt += 1;
+            if (g.frame_cnt == 5) {
+                g.frame_cnt = 0;
+                g.fps_cache = g.fps_accum;
+            }
         }
-        g.last_time = time;
 
         const width = g.canvas.width();
         const height = g.canvas.height();
@@ -762,12 +767,12 @@ const App = struct {
                 }
             }
 
-            if (false) { // TODO: add toggle + harder: fps show value of time taken for frame not vsynced one
+            { // TODO: add toggle + harder: fps show value of time taken for frame not vsynced one
                 const border1 = 5;
                 const border2 = border1 + 2;
                 const x = 20;
                 const y = 20;
-                const w = 140;
+                const w = 145;
                 const h = 14;
                 g.canvas.drawRect(x - border2, y - border2, w + 2 * border2, h + 2 * border2, d2.RGBA.BLACK);
                 g.canvas.drawRect(x - border1, y - border1, w + 2 * border1, h + 2 * border1, d2.RGBA.WHITE);
@@ -785,7 +790,8 @@ const App = struct {
                     i += 1;
                     i += 1;
                     var buf: [128]u8 = undefined;
-                    var out = std.fmt.bufPrint(&buf, "{d:.2}", .{g.fps}) catch unreachable;
+                    var out = std.fmt.bufPrint(&buf, "{d:.2}", .{g.fps_cache}) catch unreachable;
+                    i += @intCast(7 - out.len);
                     for (out) |sym| {
                         const sprite: d2.Sprites = switch (sym) {
                             '0' => .fpsfont_0,
