@@ -138,7 +138,7 @@ pub fn main() !void {
         }
     }
 
-    { // aux
+    { // win text
         const text_w = 32;
         const text_h = 32;
 
@@ -164,10 +164,45 @@ pub fn main() !void {
             const y = i * text_h;
 
             var buf: [256]u8 = undefined;
-            const out = try std.fmt.bufPrint(&buf, "text_{s} {} {}\n", .{ [1]u8{@intCast(letter)}, text_w, text_w });
+            const out = try std.fmt.bufPrint(&buf, "text_{s} {} {}\n", .{ [1]u8{@intCast(letter)}, text_w, text_h });
             try data_info_file.writeAll(out);
 
             try copyToFile(data_file, image_data, image_w, image_h, x, y, text_w, text_w);
+        }
+    }
+
+    { // fps text
+        const text_w = 10;
+        const text_h = 14;
+
+        var tmp_w: i32 = -1;
+        var tmp_h: i32 = -1;
+        var image_n: i32 = -1;
+        var image_ptr = c.stbi_load("rsrc/fps-font-10x14.png", &tmp_w, &tmp_h, &image_n, 4) orelse @panic("image load failure");
+
+        var image_w: usize = @intCast(tmp_w);
+        var image_h: usize = @intCast(tmp_h);
+
+        std.debug.print("image loaded: w: {}, h: {}, n: {}\n", .{ image_w, image_h, image_n });
+
+        var image_data = image_ptr[0 .. 4 * image_w * image_h];
+        defer c.stbi_image_free(image_ptr);
+
+        if (text_w * 15 != image_w or text_h * 1 != image_h) {
+            @panic("loaded image unexpected size");
+        }
+
+        const letters = "1234567890:FPS.";
+
+        for (letters, 0..) |letter, i| {
+            const x = i * text_w;
+            const y = 0;
+
+            var buf: [256]u8 = undefined;
+            const out = try std.fmt.bufPrint(&buf, "fpsfont_{s} {} {}\n", .{ [1]u8{@intCast(letter)}, text_w, text_h });
+            try data_info_file.writeAll(out);
+
+            try copyToFile(data_file, image_data, image_w, image_h, x, y, text_w, text_h);
         }
     }
 

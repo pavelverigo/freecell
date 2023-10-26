@@ -334,6 +334,8 @@ const App = struct {
     win: bool, // set when game is finished
     highlight_moves: bool,
     current_game_seed: u32,
+    last_time: ?f32,
+    fps: f32,
     drag: ?DragState,
     animation: ?AnimationState,
 
@@ -358,6 +360,8 @@ const App = struct {
             .current_game_seed = seed,
             .mouse_pressed_prev_frame = false,
             .drag = null,
+            .last_time = null,
+            .fps = 0.0,
             .win = false,
             .highlight_moves = true,
             .fullscreen = false,
@@ -507,6 +511,12 @@ const App = struct {
     }
 
     pub fn frame(g: *App, mouse_x: i32, mouse_y: i32, mouse_inside: bool, mouse_pressed: bool, time: f32) void {
+        if (g.last_time) |t| {
+            const cur = 1000.0 / (time - t);
+            g.fps = g.fps * 0.75 + 0.25 * cur;
+        }
+        g.last_time = time;
+
         const width = g.canvas.width();
         const height = g.canvas.height();
         const main_board_x_shift = @divTrunc(width - main_board_width, 2);
@@ -749,6 +759,51 @@ const App = struct {
                     g.canvas.drawSprite(fullscreen_region.x, fullscreen_region.y, d2.Sprites.fullscreen_on, null);
                 } else {
                     g.canvas.drawSprite(fullscreen_region.x, fullscreen_region.y, d2.Sprites.fullscreen_off, null);
+                }
+            }
+
+            if (false) { // TODO: add toggle + harder: fps show value of time taken for frame not vsynced one
+                const border1 = 5;
+                const border2 = border1 + 2;
+                const x = 20;
+                const y = 20;
+                const w = 140;
+                const h = 14;
+                g.canvas.drawRect(x - border2, y - border2, w + 2 * border2, h + 2 * border2, d2.RGBA.BLACK);
+                g.canvas.drawRect(x - border1, y - border1, w + 2 * border1, h + 2 * border1, d2.RGBA.WHITE);
+
+                const shift = 10 + 2;
+                {
+                    var i: i32 = 0;
+                    g.canvas.drawSprite(x + shift * i, y, d2.Sprites.fpsfont_F, null);
+                    i += 1;
+                    g.canvas.drawSprite(x + shift * i, y, d2.Sprites.fpsfont_P, null);
+                    i += 1;
+                    g.canvas.drawSprite(x + shift * i, y, d2.Sprites.fpsfont_S, null);
+                    i += 1;
+                    g.canvas.drawSprite(x + shift * i, y, d2.Sprites.@"fpsfont_:", null);
+                    i += 1;
+                    i += 1;
+                    var buf: [128]u8 = undefined;
+                    var out = std.fmt.bufPrint(&buf, "{d:.2}", .{g.fps}) catch unreachable;
+                    for (out) |sym| {
+                        const sprite: d2.Sprites = switch (sym) {
+                            '0' => .fpsfont_0,
+                            '1' => .fpsfont_1,
+                            '2' => .fpsfont_2,
+                            '3' => .fpsfont_3,
+                            '4' => .fpsfont_4,
+                            '5' => .fpsfont_5,
+                            '6' => .fpsfont_6,
+                            '7' => .fpsfont_7,
+                            '8' => .fpsfont_8,
+                            '9' => .fpsfont_9,
+                            '.' => .@"fpsfont_.",
+                            else => unreachable,
+                        };
+                        g.canvas.drawSprite(x + shift * i, y, sprite, null);
+                        i += 1;
+                    }
                 }
             }
         }

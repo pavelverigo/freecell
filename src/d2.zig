@@ -137,7 +137,7 @@ fn imageDrawRectGrid(dest: Image, x: i32, y: i32, w: i32, h: i32, color: RGBA, g
 }
 
 const genSpritesData = blk: {
-    @setEvalBranchQuota(20000);
+    @setEvalBranchQuota(50000);
 
     const sprites_info = @embedFile("gen/sprites.info");
 
