@@ -26,5 +26,7 @@ Winning audio: https://timbeek.itch.io/casual-soundfx-pack
 
 Card audio: https://www.kenney.nl/assets/casino-audio
 
+FPS font: https://datagoblin.itch.io/monogram
+
 # Screenshot
 ![Screenshot](screenshot.png)
