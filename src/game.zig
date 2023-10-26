@@ -327,7 +327,7 @@ const Freecell = struct {
 };
 
 const App = struct {
-    canvas: d2.Canvas,
+    canvas: Canvas,
     freecell: Freecell,
     mouse_pressed_prev_frame: bool,
     fullscreen: bool, // must keep in synced with js world
@@ -336,6 +336,8 @@ const App = struct {
     current_game_seed: u32,
     drag: ?DragState,
     animation: ?AnimationState,
+
+    const Canvas = d2.CachedCanvas;
 
     const DragState = struct {
         offset_x: i32,
@@ -351,7 +353,7 @@ const App = struct {
     pub fn init(main_image: d2.Image) App {
         const seed = wasm.seed();
         return .{
-            .canvas = .{ .backed_image = main_image },
+            .canvas = Canvas.init(main_image),
             .freecell = Freecell.init(seed),
             .current_game_seed = seed,
             .mouse_pressed_prev_frame = false,
@@ -368,7 +370,7 @@ const App = struct {
     }
 
     pub fn resize(g: *App, new_image: d2.Image) void {
-        g.canvas = .{ .backed_image = new_image };
+        g.canvas.resize(new_image);
     }
 
     fn newGame(g: *App) void {

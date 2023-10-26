@@ -8,6 +8,12 @@ zig build
 python3 -m http.server
 ```
 
+# Technical
+
+- Sprites embed directly into wasm binary
+- No WebGL, only software rendering, final image buffer is copied to <canvas>
+- Zero dependecies, except stb_image for sprite compilation
+
 # Assets
 
 Cards refactored from: https://screamingbrainstudios.itch.io/poker-pack
