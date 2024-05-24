@@ -35,10 +35,10 @@ jobs:
       - name: Download, verify, and unpack zig compiler archive if not cached
         if: steps.cache-zig.outputs.cache-hit != 'true'
         run: |
-          curl -L -o /tmp/archive.tar.gz ${{ env.ZIG_ARCHIVE_URL }}
-          echo "${{ env.ZIG_ARCHIVE_SHA256 }}  /tmp/archive.tar.gz" | sha256sum -c
+          curl -L -o /tmp/archive.tar.xz ${{ env.ZIG_ARCHIVE_URL }}
+          echo "${{ env.ZIG_ARCHIVE_SHA256 }}  /tmp/archive.tar.xz" | sha256sum -c
           mkdir -p _zig
-          tar -xJf /tmp/archive.tar.gz -C _zig
+          tar -xf /tmp/archive.tar.xz -C _zig --strip-components=1
 
       - run: ./_zig/zig build --release
       - uses: actions/upload-pages-artifact@v3
