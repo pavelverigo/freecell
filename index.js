@@ -57,7 +57,7 @@ const imports = {
         },
     },
 };
-const wasm = await WebAssembly.instantiateStreaming(fetch("zig-out/lib/freecell.wasm"), imports);
+const wasm = await WebAssembly.instantiateStreaming(fetch("freecell.wasm"), imports);
 memory = wasm.instance.exports.memory;
 
 const _init = wasm.instance.exports._init;

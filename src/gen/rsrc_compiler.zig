@@ -6,12 +6,12 @@ const c = @cImport({
 
 pub fn main() !void {
     var data_info_file = try std.fs.cwd().createFile("out/sprites.info", .{});
-    var data_file = try std.fs.cwd().createFile("out/sprites.data", .{});
+    const data_file = try std.fs.cwd().createFile("out/sprites.data", .{});
 
     {
-        var suits = [_][]const u8{ "clubs", "diamonds", "hearts", "spades" };
-        var cards = [_][]const u8{ "a", "2", "3", "4", "5", "6", "7", "8", "9", "10", "j", "q", "k" };
-        var suits_filepath = [_][*c]const u8{ "rsrc/clubs-88x124.png", "rsrc/diamonds-88x124.png", "rsrc/hearts-88x124.png", "rsrc/spades-88x124.png" };
+        const suits = [_][]const u8{ "clubs", "diamonds", "hearts", "spades" };
+        const cards = [_][]const u8{ "a", "2", "3", "4", "5", "6", "7", "8", "9", "10", "j", "q", "k" };
+        const suits_filepath = [_][*c]const u8{ "rsrc/clubs-88x124.png", "rsrc/diamonds-88x124.png", "rsrc/hearts-88x124.png", "rsrc/spades-88x124.png" };
 
         for (suits, suits_filepath) |suit, filepath| {
             std.debug.print("for {s} {s}\n", .{ suit, filepath });
@@ -21,10 +21,10 @@ pub fn main() !void {
             var image_n: i32 = -1;
             var image_ptr = c.stbi_load(filepath, &tmp_w, &tmp_h, &image_n, 4) orelse @panic("image load failure");
 
-            var image_w: usize = @intCast(tmp_w);
-            var image_h: usize = @intCast(tmp_h);
+            const image_w: usize = @intCast(tmp_w);
+            const image_h: usize = @intCast(tmp_h);
 
-            var image_data = image_ptr[0 .. 4 * image_w * image_h];
+            const image_data = image_ptr[0 .. 4 * image_w * image_h];
             defer c.stbi_image_free(image_ptr);
 
             std.debug.print("image loaded: w: {}, h: {}, n: {}\n", .{ image_w, image_h, image_n });
@@ -50,19 +50,19 @@ pub fn main() !void {
     }
 
     { // aux
-        var suits = [_][]const u8{ "spades", "hearts", "diamonds", "clubs" };
+        const suits = [_][]const u8{ "spades", "hearts", "diamonds", "clubs" };
 
         var tmp_w: i32 = -1;
         var tmp_h: i32 = -1;
         var image_n: i32 = -1;
         var image_ptr = c.stbi_load("rsrc/aux-88x124.png", &tmp_w, &tmp_h, &image_n, 4) orelse @panic("image load failure");
 
-        var image_w: usize = @intCast(tmp_w);
-        var image_h: usize = @intCast(tmp_h);
+        const image_w: usize = @intCast(tmp_w);
+        const image_h: usize = @intCast(tmp_h);
 
         std.debug.print("image loaded: w: {}, h: {}, n: {}\n", .{ image_w, image_h, image_n });
 
-        var image_data = image_ptr[0 .. 4 * image_w * image_h];
+        const image_data = image_ptr[0 .. 4 * image_w * image_h];
         defer c.stbi_image_free(image_ptr);
 
         const card_w = 88;
@@ -85,7 +85,7 @@ pub fn main() !void {
     }
 
     { // aux
-        var ui_names = [_][]const u8{
+        const ui_names = [_][]const u8{
             "fullscreen_on",
             "fullscreen_on_hover",
             "fullscreen_off",
@@ -112,12 +112,12 @@ pub fn main() !void {
         var image_n: i32 = -1;
         var image_ptr = c.stbi_load("rsrc/ui-height50.png", &tmp_w, &tmp_h, &image_n, 4) orelse @panic("image load failure");
 
-        var image_w: usize = @intCast(tmp_w);
-        var image_h: usize = @intCast(tmp_h);
+        const image_w: usize = @intCast(tmp_w);
+        const image_h: usize = @intCast(tmp_h);
 
         std.debug.print("image loaded: w: {}, h: {}, n: {}\n", .{ image_w, image_h, image_n });
 
-        var image_data = image_ptr[0 .. 4 * image_w * image_h];
+        const image_data = image_ptr[0 .. 4 * image_w * image_h];
         defer c.stbi_image_free(image_ptr);
 
         if (ui_width_sum != image_w or ui_height != image_h) {
@@ -147,12 +147,12 @@ pub fn main() !void {
         var image_n: i32 = -1;
         var image_ptr = c.stbi_load("rsrc/text-32x32.png", &tmp_w, &tmp_h, &image_n, 4) orelse @panic("image load failure");
 
-        var image_w: usize = @intCast(tmp_w);
-        var image_h: usize = @intCast(tmp_h);
+        const image_w: usize = @intCast(tmp_w);
+        const image_h: usize = @intCast(tmp_h);
 
         std.debug.print("image loaded: w: {}, h: {}, n: {}\n", .{ image_w, image_h, image_n });
 
-        var image_data = image_ptr[0 .. 4 * image_w * image_h];
+        const image_data = image_ptr[0 .. 4 * image_w * image_h];
         defer c.stbi_image_free(image_ptr);
 
         if (text_w != image_w or text_h * 26 != image_h) {
@@ -180,12 +180,12 @@ pub fn main() !void {
         var image_n: i32 = -1;
         var image_ptr = c.stbi_load("rsrc/fps-font-10x14.png", &tmp_w, &tmp_h, &image_n, 4) orelse @panic("image load failure");
 
-        var image_w: usize = @intCast(tmp_w);
-        var image_h: usize = @intCast(tmp_h);
+        const image_w: usize = @intCast(tmp_w);
+        const image_h: usize = @intCast(tmp_h);
 
         std.debug.print("image loaded: w: {}, h: {}, n: {}\n", .{ image_w, image_h, image_n });
 
-        var image_data = image_ptr[0 .. 4 * image_w * image_h];
+        const image_data = image_ptr[0 .. 4 * image_w * image_h];
         defer c.stbi_image_free(image_ptr);
 
         if (text_w * 15 != image_w or text_h * 1 != image_h) {
@@ -212,10 +212,10 @@ pub fn main() !void {
         var image_n: i32 = -1;
         var image_ptr = c.stbi_load("rsrc/cursor-28x38.png", &tmp_w, &tmp_h, &image_n, 4) orelse @panic("image load failure");
 
-        var image_w: usize = @intCast(tmp_w);
-        var image_h: usize = @intCast(tmp_h);
+        const image_w: usize = @intCast(tmp_w);
+        const image_h: usize = @intCast(tmp_h);
 
-        var image_data = image_ptr[0 .. 4 * image_w * image_h];
+        const image_data = image_ptr[0 .. 4 * image_w * image_h];
         defer c.stbi_image_free(image_ptr);
 
         std.debug.print("image loaded: w: {}, h: {}, n: {}\n", .{ image_w, image_h, image_n });

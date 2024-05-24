@@ -161,7 +161,7 @@ const genSpritesData = blk: {
             const h = std.fmt.parseInt(i32, h_str, 10) catch unreachable;
 
             fields[i] = .{
-                .name = name,
+                .name = @ptrCast(name),
                 .value = i,
             };
 
@@ -234,7 +234,7 @@ pub const Canvas = struct {
     }
 
     pub fn drawSprite(self: *Canvas, x: i32, y: i32, sprite: Sprites, dark_blend: ?f32) void {
-        var sprite_image = sprites_image.get(sprite);
+        const sprite_image = sprites_image.get(sprite);
         imageDrawImage(self.backed_image, x, y, sprite_image, 0, 0, sprite_image.w, sprite_image.h, dark_blend);
     }
 
@@ -260,8 +260,8 @@ pub const CachedCanvas = struct {
 
     op_grid: std.BoundedArray(std.BoundedArray(u8, 64), grid_size),
 
-    const grid_wh = 128;
-    const grid_size = 512;
+    const grid_wh = 256;
+    const grid_size = 128;
 
     const Op = union(enum) {
         rect: RectOp,
@@ -345,7 +345,7 @@ pub const CachedCanvas = struct {
                 imageDrawRectGrid(self.backed_image, rect.x, rect.y, rect.w, rect.h, rect.color, grid_x, grid_y, grid_wh);
             },
             .sprite => |sprite| {
-                var sprite_image = sprites_image.get(sprite.sprite);
+                const sprite_image = sprites_image.get(sprite.sprite);
                 imageDrawImageGrid(self.backed_image, sprite.x, sprite.y, sprite_image, 0, 0, sprite_image.w, sprite_image.h, sprite.dark_blend, grid_x, grid_y, grid_wh);
             },
         }
@@ -363,7 +363,7 @@ pub const CachedCanvas = struct {
                     regionOp(&grid, grid_w, grid_h, op.x, op.y, op.w, op.h, i);
                 },
                 .sprite => |op| {
-                    var sprite_image = sprites_image.get(op.sprite);
+                    const sprite_image = sprites_image.get(op.sprite);
                     regionOp(&grid, grid_w, grid_h, op.x, op.y, sprite_image.w, sprite_image.h, i);
                 },
             }

@@ -24,7 +24,7 @@ pub fn fullscreen_mode(mode: bool) void {
 }
 
 const Card = struct {
-    pub const Suit = enum(u8) {
+    pub const Suit = enum {
         diamonds,
         hearts,
         clubs,
@@ -43,7 +43,7 @@ const Card = struct {
         }
     };
 
-    pub const Rank = enum(u8) {
+    pub const Rank = enum {
         a,
         @"2",
         @"3",
@@ -191,7 +191,7 @@ const Freecell = struct {
                     cnt += 1;
                     j += 1;
                 }
-                var limit = blk: {
+                const limit = blk: {
                     var n: usize = 1;
                     for (0..8) |k| {
                         if (f.cascades[k].len == 0) n *= 2;
@@ -790,7 +790,7 @@ const App = struct {
                     i += 1;
                     i += 1;
                     var buf: [128]u8 = undefined;
-                    var out = std.fmt.bufPrint(&buf, "{d:.2}", .{g.fps_cache}) catch unreachable;
+                    const out = std.fmt.bufPrint(&buf, "{d:.2}", .{g.fps_cache}) catch unreachable;
                     i += @intCast(7 - out.len);
                     for (out) |sym| {
                         const sprite: d2.Sprites = switch (sym) {

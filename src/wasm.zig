@@ -15,7 +15,7 @@ extern fn _print(usize, usize) void;
 
 pub fn print(comptime fmt: []const u8, args: anytype) void {
     var buf: [1024]u8 = undefined;
-    var out = std.fmt.bufPrint(&buf, fmt, args) catch unreachable;
+    const out = std.fmt.bufPrint(&buf, fmt, args) catch unreachable;
     _print(@intFromPtr(out.ptr), out.len);
 }
 
@@ -30,7 +30,7 @@ const heap_pages = 256;
 var allocator: std.mem.Allocator = undefined;
 
 export fn _init(w: i32, h: i32) [*]d2.RGBA {
-    var heap_slice = @as([*]u8, @ptrFromInt(64 * 1024))[0 .. heap_pages * 64 * 1024];
+    const heap_slice = @as([*]u8, @ptrFromInt(64 * 1024))[0 .. heap_pages * 64 * 1024];
     var fixed_buffer = std.heap.FixedBufferAllocator.init(heap_slice);
     allocator = fixed_buffer.allocator();
 
@@ -46,7 +46,7 @@ export fn _init(w: i32, h: i32) [*]d2.RGBA {
 }
 
 export fn _resize(w: i32, h: i32) [*]d2.RGBA {
-    var heap_slice = @as([*]u8, @ptrFromInt(64 * 1024))[0 .. heap_pages * 64 * 1024];
+    const heap_slice = @as([*]u8, @ptrFromInt(64 * 1024))[0 .. heap_pages * 64 * 1024];
     var fixed_buffer = std.heap.FixedBufferAllocator.init(heap_slice);
     allocator = fixed_buffer.allocator();
 
