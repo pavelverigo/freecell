@@ -5,6 +5,7 @@ let width = canvas.width;
 let height = canvas.height;
 let fullscreen = false;
 
+
 const win_audio = new Audio("audio/Victory SoundFX5.wav");
 const card_audio = new Audio("audio/cardSlide1.wav");
 card_audio.playbackRate = 1.5;
