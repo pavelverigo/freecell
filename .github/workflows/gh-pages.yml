@@ -38,7 +38,7 @@ jobs:
           curl -L -o /tmp/archive.tar.gz ${{ env.ZIG_ARCHIVE_URL }}
           echo "${{ env.ZIG_ARCHIVE_SHA256 }}  /tmp/archive.tar.gz" | sha256sum -c
           mkdir -p _zig
-          tar -xzf /tmp/archive.tar.gz -C _zig
+          tar -xJf /tmp/archive.tar.gz -C _zig
 
       - run: ./_zig/zig build --release
       - uses: actions/upload-pages-artifact@v3
