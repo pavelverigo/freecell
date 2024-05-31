@@ -1,18 +1,18 @@
 # Freecell (https://pavelverigo.github.io/freecell/)
 
 ```
-zig build
+zig build --release
 ```
 
 ```
-python3 -m http.server
+python3 -m http.server --directory zig-out/www/
 ```
 
 # Technical
 
 - Sprites embed directly into wasm binary
 - No WebGL, only software rendering, final image buffer is copied to &lt;canvas&gt;
-- Zero dependecies, except stb_image for sprite compilation
+- Zero dependecies, except stb_image for sprites compilation
 
 # Assets
 
@@ -27,6 +27,3 @@ Winning audio: https://timbeek.itch.io/casual-soundfx-pack
 Card audio: https://www.kenney.nl/assets/casino-audio
 
 FPS font: https://datagoblin.itch.io/monogram
-
-# Screenshot
-![Screenshot](screenshot.png)

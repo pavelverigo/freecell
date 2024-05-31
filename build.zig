@@ -1,30 +1,31 @@
 const std = @import("std");
 
 pub fn build(b: *std.Build) void {
-    const target = b.standardTargetOptions(.{});
-    const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSmall });
-
-    const rsrc_compiler = b.addExecutable(.{
-        .name = "rsrc_compiler",
-        .root_source_file = .{ .path = "src/gen/rsrc_compiler.zig" },
-        .target = target,
-        .optimize = optimize,
+    const sprites_compiler = b.addExecutable(.{
+        .name = "sprites_compiler",
+        .root_source_file = b.path("src/sprites_compiler.zig"),
+        .target = b.host,
     });
 
-    rsrc_compiler.linkLibC();
-    rsrc_compiler.addIncludePath(.{ .path = "thirdparty" });
-    rsrc_compiler.addCSourceFile(.{ .file = .{ .path = "src/gen/stb_impl.c" }, .flags = &.{} });
+    sprites_compiler.linkLibC();
+    sprites_compiler.addIncludePath(b.path("thirdparty/stb_image-2.29"));
+    sprites_compiler.addCSourceFile(.{ .file = b.path("thirdparty/stb_image-2.29/stb_image_impl.c"), .flags = &.{} });
 
-    const gen_cmd = b.addRunArtifact(rsrc_compiler);
-    gen_cmd.step.dependOn(b.getInstallStep());
-    const gen_step = b.step("gen", "Compile sprites");
-    gen_step.dependOn(&gen_cmd.step);
+    const sprites_compiler_step = b.addRunArtifact(sprites_compiler);
+    const sprites_zig_output = sprites_compiler_step.addOutputFileArg("Sprite.zig");
+    const sprites_data_output = sprites_compiler_step.addOutputFileArg("sprites.data");
 
-    b.installArtifact(rsrc_compiler);
+    const sprites_module = b.addModule("Sprite", .{
+        .root_source_file = sprites_zig_output,
+    });
+    sprites_module.addAnonymousImport("sprites_data", .{
+        .root_source_file = sprites_data_output,
+    });
 
-    const wasm = b.addExecutable(.{
+    const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSmall });
+    const game = b.addExecutable(.{
         .name = "freecell",
-        .root_source_file = b.path("src/wasm.zig"),
+        .root_source_file = b.path("src/wasm_main.zig"),
         .target = b.resolveTargetQuery(.{
             .cpu_arch = .wasm32,
             // TODO .cpu_model = .bleeding_edge non-viable
@@ -48,18 +49,15 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    const heap_pages = 256;
-    const stack_pages = 64;
+    game.root_module.addImport("Sprite", sprites_module);
 
-    wasm.rdynamic = true;
-    wasm.entry = .disabled;
-    wasm.initial_memory = (heap_pages + stack_pages) * 64 * 1024;
-    wasm.global_base = heap_pages * 64 * 1024;
+    game.rdynamic = true;
+    game.entry = .disabled;
 
     const wf = b.addWriteFiles();
-    _ = wf.addCopyFile(wasm.getEmittedBin(), wasm.out_filename);
-    _ = wf.addCopyFile(b.path("index.html"), "index.html");
-    _ = wf.addCopyFile(b.path("index.js"), "index.js");
+    _ = wf.addCopyFile(game.getEmittedBin(), game.out_filename);
+    _ = wf.addCopyFile(b.path("src/index.html"), "index.html");
+    _ = wf.addCopyFile(b.path("src/index.js"), "index.js");
     _ = wf.addCopyDirectory(b.path("audio"), "audio", .{});
 
     const www_dir = b.addInstallDirectory(.{ .source_dir = wf.getDirectory(), .install_dir = .prefix, .install_subdir = "www" });
