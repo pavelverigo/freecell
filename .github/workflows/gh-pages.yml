@@ -7,41 +7,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  build:
     permissions:
       contents: read
-      pages: write
-      id-token: write
-
-    env:
-      ZIG_VERSION: "0.12.0"
-      ZIG_ARCHIVE_URL: "https://ziglang.org/download/0.12.0/zig-linux-x86_64-0.12.0.tar.xz"
-      ZIG_ARCHIVE_SHA256: "c7ae866b8a76a568e2d5cfd31fe89cdb629bdd161fdd5018b29a4a0a17045cad"
-
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
-
-      - uses: actions/cache@v4
-        id: cache-zig
+      - uses: mlugg/setup-zig@v1
         with:
-          path: _zig
-          key: ${{ env.ZIG_VERSION }}
-      - name: Download, verify, and unpack zig compiler archive if not cached
-        if: steps.cache-zig.outputs.cache-hit != 'true'
-        run: |
-          curl -L -o /tmp/archive.tar.xz ${{ env.ZIG_ARCHIVE_URL }}
-          echo "${{ env.ZIG_ARCHIVE_SHA256 }}  /tmp/archive.tar.xz" | sha256sum -c
-          mkdir -p _zig
-          tar -xf /tmp/archive.tar.xz -C _zig --strip-components=1
-
-      - run: ./_zig/zig build --release
+          version: 0.13.0
+      - run: zig build --release
       - uses: actions/upload-pages-artifact@v3
         with:
           path: zig-out/www/
+
+  deploy:
+    needs: build
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
       - uses: actions/deploy-pages@v4

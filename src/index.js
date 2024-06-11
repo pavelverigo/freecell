@@ -48,12 +48,9 @@ canvas.addEventListener("mouseover", (e) => {
     wasm__update_mouse_inside(true);
     // sync all mouse state on entrance, other listeners will sync their respective state going forward
     wasm__update_mouse_position(e.offsetX, e.offsetY);
-    if ((e.buttons & 1) === 0) wasm__update_mouse_button_state(0, false);
-    else                       wasm__update_mouse_button_state(0, true);
-    if ((e.buttons & 2) === 0) wasm__update_mouse_button_state(1, false);
-    else                       wasm__update_mouse_button_state(1, true);
-    if ((e.buttons & 4) === 0) wasm__update_mouse_button_state(2, false);
-    else                       wasm__update_mouse_button_state(2, true);
+    wasm__update_mouse_button_state(0, (e.buttons & 1) !== 0);
+    wasm__update_mouse_button_state(1, (e.buttons & 2) !== 0);
+    wasm__update_mouse_button_state(2, (e.buttons & 4) !== 0);
 });
 
 canvas.addEventListener("mouseout", (e) => {

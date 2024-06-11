@@ -73,7 +73,7 @@ fn sprite_from_foundation_suit(suit: Card.Suit) *const Sprite {
     }
 }
 
-// Represents basic state of freecell game played, no reference to UI and drawing
+// Raw freecell state
 const Freecell = struct {
     const CASCADE_CARD_LIMIT = 32; // sane limit for bounded arrays
 
@@ -253,7 +253,6 @@ const Freecell = struct {
                     i += 1;
                 }
             }
-
             break :blk deck_tmp;
         };
 
@@ -284,9 +283,6 @@ canvas: d2.Canvas,
 freecell: Freecell,
 mouse_pressed_prev_frame: bool,
 win: bool, // set when game is finished
-fps_accum: f32,
-fps_cache: f32,
-frame_cnt: usize,
 highlight_moves: bool,
 current_game_seed: u32,
 drag: ?DragState,
@@ -317,9 +313,6 @@ pub fn init(gpa: std.mem.Allocator, w: i32, h: i32) Game {
         .mouse_pressed_prev_frame = false,
         .drag = null,
         .win = false,
-        .fps_accum = 0,
-        .fps_cache = 0,
-        .frame_cnt = 0,
         .highlight_moves = true,
         .animation = null,
     };
@@ -345,141 +338,40 @@ fn reset_ui(g: *Game) void {
     g.animation = null;
 }
 
-const animation_time = 300; // ms
+const canvas_w = 1200;
+const canvas_h = 900;
 
-const ui_height = 50;
-const ui_new_game_w = 125;
-const ui_restart_game_w = 165;
-const ui_highlight_w = 250;
-const ui_shift = 25;
+const char_w = 10;
+const char_h = 22;
+const char_dx = 4;
+const btn_h = char_h + 12;
+const btn_x_shift = 20;
+const btn_y = canvas_h - btn_h - 20;
+
+const new_game_btn_rect = Rect.from_wh(200, btn_h).offset(btn_x_shift, btn_y);
+const restart_game_btn_rect = Rect.from_wh(200, btn_h).offset(2 * btn_x_shift + 200, btn_y);
+const highlight_mode_btn_rect = Rect.from_wh(300, btn_h).offset(3 * btn_x_shift + 200 + 200, btn_y);
+
+const main_board_y_shift = 180;
+const main_board_width = 8 * card_w + (8 - 1) * card_x_gap;
+
+const main_board_x_shift = @divTrunc(canvas_w - main_board_width, 2);
+
+const animation_time = 300; // ms
 
 const card_w = 88;
 const card_h = 124;
 const card_x_gap = 20;
 const card_y_shift = 30;
 
-const main_board_y_shift = 180;
-const main_board_width = 8 * card_w + (8 - 1) * card_x_gap;
-
 const top_line_y = 20;
 
-fn cardDropPos(g: *Game, card_region: Rect) ?Freecell.CardPos { // card position, ignore cascade row
-    const width = g.canvas.surf.w;
-    const height = g.canvas.surf.h;
-    const main_board_x_shift = @divTrunc(width - main_board_width, 2);
-    const top_line_x = main_board_x_shift;
-
-    var best_area: i64 = 0; // search of best intersection
-    var best_pos: ?Freecell.CardPos = null;
-    for (0..4) |i| { // open slots
-        const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + top_line_x;
-        const y = top_line_y;
-        const intersect_area = card_region.intersect(.{ .x = x, .y = y, .w = card_w, .h = card_h }).area();
-        if (intersect_area > best_area) {
-            best_area = intersect_area;
-            best_pos = .{ .open_slot = @intCast(i) };
-        }
-    }
-    for (0..8) |i| { // cascades
-        const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + main_board_x_shift;
-        const y = main_board_y_shift;
-        const intersect_area = card_region.intersect(.{ .x = x, .y = y, .w = card_w, .h = height - main_board_y_shift }).area();
-        if (intersect_area > best_area) {
-            best_area = intersect_area;
-            best_pos = .{ .cascade = .{ @intCast(i), 0 } };
-        }
-    }
-    for (0..4) |i| { // foundation
-        const x = @as(i32, @intCast(i + 4)) * (card_w + card_x_gap) + top_line_x;
-        const y = top_line_y;
-        const intersect_area = card_region.intersect(.{ .x = x, .y = y, .w = card_w, .h = card_h }).area();
-        if (intersect_area > best_area) {
-            best_area = intersect_area;
-            best_pos = .{ .foundation = @intCast(i) };
-        }
-    }
-    return best_pos;
-}
-
-fn cardRegionFromPos(g: *Game, pos: Freecell.CardPos) Rect {
-    const width = g.canvas.surf.w;
-    const main_board_x_shift = @divTrunc(width - main_board_width, 2);
-    const top_line_x = main_board_x_shift;
-    switch (pos) {
-        .cascade => |ij| {
-            const i = ij[0];
-            const j = ij[1];
-            const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + main_board_x_shift;
-            const y = @as(i32, @intCast(j)) * card_y_shift + main_board_y_shift;
-            return .{ .x = x, .y = y, .w = card_w, .h = card_h };
-        },
-        .open_slot => |i| {
-            const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + top_line_x;
-            const y = top_line_y;
-            return .{ .x = x, .y = y, .w = card_w, .h = card_h };
-        },
-        .foundation => |i| {
-            const x = @as(i32, @intCast(i + 4)) * (card_w + card_x_gap) + top_line_x;
-            const y = top_line_y;
-            return .{ .x = x, .y = y, .w = card_w, .h = card_h };
-        },
-    }
-}
-
-fn cardClickPos(g: *Game, click_x: i32, click_y: i32) ?Freecell.CardPos { // card position
-    const width = g.canvas.surf.w;
-    const height = g.canvas.surf.h;
-    _ = height;
-    const main_board_x_shift = @divTrunc(width - main_board_width, 2);
-    const top_line_x = main_board_x_shift;
-
-    for (0..4) |i| { // open slots
-        const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + top_line_x;
-        const y = top_line_y;
-        const region: Rect = .{ .x = x, .y = y, .w = card_w, .h = card_h };
-        if (region.inside(click_x, click_y)) {
-            if (g.freecell.open_slots[@intCast(i)] == null) return null;
-            return .{ .open_slot = @intCast(i) };
-        }
-    }
-    for (g.freecell.cascades, 0..) |cascade, i| { // cascades
-        for (cascade.slice(), 0..) |_, j| {
-            const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + main_board_x_shift;
-            const y = @as(i32, @intCast(j)) * card_y_shift + main_board_y_shift;
-            const region: Rect = blk: {
-                if (j != cascade.len - 1) break :blk .{ .x = x, .y = y, .w = card_w, .h = card_y_shift };
-                break :blk .{ .x = x, .y = y, .w = card_w, .h = card_h }; // last card
-            };
-            if (region.inside(click_x, click_y)) {
-                return .{ .cascade = .{ @intCast(i), @intCast(j) } };
-            }
-        }
-    }
-    return null;
-}
-
 pub fn frame(g: *Game) void {
-    g.canvas.begin_frame();
-
     const mouse_x = pf.get_mouse_x();
     const mouse_y = pf.get_mouse_y();
     const mouse_inside = pf.is_mouse_inside();
     const main_button_down = pf.is_mouse_button_down(.main);
     const time = pf.get_timestamp();
-
-    {
-        g.fps_accum = 0.80 * g.fps_accum + 0.20 * 60;
-        g.frame_cnt += 1;
-        if (g.frame_cnt == 5) {
-            g.frame_cnt = 0;
-            g.fps_cache = g.fps_accum;
-        }
-    }
-
-    const width = g.canvas.surf.w;
-    const height = g.canvas.surf.h;
-    const main_board_x_shift = @divTrunc(width - main_board_width, 2);
-    const top_line_x = main_board_x_shift;
 
     const clicked = main_button_down and !g.mouse_pressed_prev_frame;
     g.mouse_pressed_prev_frame = main_button_down;
@@ -508,7 +400,7 @@ pub fn frame(g: *Game) void {
         if (clicked) {
             if (g.cardClickPos(mouse_x, mouse_y)) |pos| {
                 if (g.freecell.isMovable(pos)) {
-                    const card_region = g.cardRegionFromPos(pos);
+                    const card_region = cardRegionFromPos(pos);
                     g.drag = .{
                         .offset_x = mouse_x - card_region.x,
                         .offset_y = mouse_y - card_region.y,
@@ -516,26 +408,21 @@ pub fn frame(g: *Game) void {
                     };
                 }
             }
-            { // ui
-                var new_game_region: Rect = .{ .x = ui_shift, .y = height - ui_shift - ui_height, .w = ui_new_game_w, .h = ui_height };
-                var restart_game_region: Rect = .{ .x = 2 * ui_shift + ui_new_game_w, .y = height - ui_shift - ui_height, .w = ui_restart_game_w, .h = ui_height };
-                var highlight_region: Rect = .{ .x = 3 * ui_shift + ui_new_game_w + ui_restart_game_w, .y = height - ui_shift - ui_height, .w = ui_highlight_w, .h = ui_height };
-                if (new_game_region.inside(mouse_x, mouse_y)) {
-                    g.start_new_game();
-                }
-                if (restart_game_region.inside(mouse_x, mouse_y)) {
-                    g.restart_game();
-                }
-                if (highlight_region.inside(mouse_x, mouse_y)) {
-                    g.highlight_moves = !g.highlight_moves;
-                }
+            if (new_game_btn_rect.inside(mouse_x, mouse_y)) {
+                g.start_new_game();
+            }
+            if (restart_game_btn_rect.inside(mouse_x, mouse_y)) {
+                g.restart_game();
+            }
+            if (highlight_mode_btn_rect.inside(mouse_x, mouse_y)) {
+                g.highlight_moves = !g.highlight_moves;
             }
         }
 
         if (!main_button_down) {
             if (g.drag) |d| make_move: {
                 const card_region: Rect = .{ .x = mouse_x - d.offset_x, .y = mouse_y - d.offset_y, .w = card_w, .h = card_h };
-                const to = g.cardDropPos(card_region) orelse break :make_move;
+                const to = cardDropPos(card_region) orelse break :make_move;
                 if (g.freecell.attemptMove(d.top_card_pos, to)) {
                     if (g.freecell.findFoundationAutomove()) |from_pos| {
                         pf.play_sound("card");
@@ -550,17 +437,21 @@ pub fn frame(g: *Game) void {
         }
     }
 
+    g.canvas.begin_frame();
+
     const BOARD_COLOR: d2.RGBA = .{ .r = 0x00, .g = 0x80, .b = 0x00, .a = 0xFF };
     const MAIN_BOARD_COLOR: d2.RGBA = .{ .r = 0x00, .g = 0x70, .b = 0x00, .a = 0xFF };
     const HIGHLIGHT_COLOR: d2.RGBA = .{ .r = 0x00, .g = 0x50, .b = 0x00, .a = 0xFF };
     const LIGHT_HIGHLIGHT_COLOR: d2.RGBA = .{ .r = 0x00, .g = 0xD7, .b = 0x00, .a = 0xFF };
     const GOLD_COLOR: d2.RGBA = .{ .r = 0xFF, .g = 0xD7, .b = 0x00, .a = 0xFF };
+    const NON_MOVABLE_MASK_COLOR: d2.RGBA = .{ .r = 0x00, .g = 0x00, .b = 0x00, .a = 0x80 };
     const BLACK: d2.RGBA = .{ .r = 0x00, .g = 0x00, .b = 0x00, .a = 0xFF };
     const WHITE: d2.RGBA = .{ .r = 0xFF, .g = 0xFF, .b = 0xFF, .a = 0xFF };
+    const GRAY: d2.RGBA = .{ .r = 0x80, .g = 0x80, .b = 0x80, .a = 0xFF };
 
-    const main_board_rect: Rect = .{ .x = main_board_x_shift, .y = main_board_y_shift, .w = main_board_width, .h = height - main_board_y_shift - 120 };
+    const main_board_rect: Rect = .{ .x = main_board_x_shift, .y = main_board_y_shift, .w = main_board_width, .h = canvas_h - main_board_y_shift - 120 };
 
-    g.canvas.draw_rect(Rect.from_wh(width, height), BOARD_COLOR);
+    g.canvas.draw_rect(Rect.from_wh(canvas_w, canvas_h), BOARD_COLOR);
 
     g.canvas.draw_rect(main_board_rect.inset(-16, -16), BLACK);
     g.canvas.draw_rect(main_board_rect.inset(-14, -14), MAIN_BOARD_COLOR);
@@ -578,6 +469,7 @@ pub fn frame(g: *Game) void {
                     g.canvas.draw_sprite(sprite_from_card(card), x, y);
                 } else {
                     g.canvas.draw_sprite(sprite_from_card(card), x, y);
+                    g.canvas.draw_rect(Rect.from_wh(card_w, card_h).offset(x, y), NON_MOVABLE_MASK_COLOR);
                 }
             } else {
                 g.canvas.draw_sprite(sprite_from_card(card), x, y);
@@ -592,7 +484,7 @@ pub fn frame(g: *Game) void {
     }
 
     for (0..4) |i| {
-        const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + top_line_x;
+        const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + main_board_rect.x;
         const y = top_line_y;
         g.canvas.draw_rect(Rect.from_wh(card_w, card_h).offset(x, y).inset(-1, -1), LIGHT_HIGHLIGHT_COLOR);
         g.canvas.draw_rect(Rect.from_wh(card_w, card_h).offset(x, y), HIGHLIGHT_COLOR);
@@ -602,21 +494,21 @@ pub fn frame(g: *Game) void {
         if (g.drag) |d| if (d.top_card_pos == .open_slot and d.top_card_pos.open_slot == i) continue;
         if (g.animation) |anim| if (anim.from == .open_slot and anim.from.open_slot == i) continue;
         if (g.freecell.open_slots[i]) |card| {
-            const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + top_line_x;
+            const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + main_board_rect.x;
             const y = top_line_y;
             g.canvas.draw_sprite(sprite_from_card(card), x, y);
         }
     }
 
     for (4..8) |i| {
-        const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + top_line_x;
+        const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + main_board_rect.x;
         const y = top_line_y;
         g.canvas.draw_rect(Rect.from_wh(card_w, card_h).offset(x, y).inset(-1, -1), GOLD_COLOR);
         g.canvas.draw_rect(Rect.from_wh(card_w, card_h).offset(x, y), HIGHLIGHT_COLOR);
     }
 
     for (std.enums.values(Card.Suit), 0..) |suit, i| {
-        const x = @as(i32, @intCast(i + 4)) * (card_w + card_x_gap) + top_line_x;
+        const x = @as(i32, @intCast(i + 4)) * (card_w + card_x_gap) + main_board_rect.x;
         const y = top_line_y;
 
         if (g.freecell.foundations.get(suit)) |rank| {
@@ -649,7 +541,7 @@ pub fn frame(g: *Game) void {
                 break :blk .{ .x = x, .y = y, .w = card_w, .h = card_h };
             },
             .open_slot => |i| blk: {
-                const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + top_line_x;
+                const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + main_board_rect.x;
                 const y = top_line_y;
                 break :blk .{ .x = x, .y = y, .w = card_w, .h = card_h };
             },
@@ -657,7 +549,7 @@ pub fn frame(g: *Game) void {
         };
         const to_region: Rect = rect: {
             const i: i32 = @intFromEnum(card.suit);
-            const x = (i + 4) * (card_w + card_x_gap) + top_line_x;
+            const x = (i + 4) * (card_w + card_x_gap) + main_board_rect.x;
             const y = top_line_y;
             break :rect .{ .x = x, .y = y, .w = card_w, .h = card_h };
         };
@@ -668,94 +560,46 @@ pub fn frame(g: *Game) void {
         g.canvas.draw_sprite(sprite_from_card(card), x, y);
     }
 
-    { // ui draw
-        var new_game_region: Rect = .{ .x = ui_shift, .y = height - ui_shift - ui_height, .w = ui_new_game_w, .h = ui_height };
-        var restart_game_region: Rect = .{ .x = 2 * ui_shift + ui_new_game_w, .y = height - ui_shift - ui_height, .w = ui_restart_game_w, .h = ui_height };
-        var highlight_region: Rect = .{ .x = 3 * ui_shift + ui_new_game_w + ui_restart_game_w, .y = height - ui_shift - ui_height, .w = ui_highlight_w, .h = ui_height };
-        if (new_game_region.inside(mouse_x, mouse_y)) {
-            g.canvas.draw_sprite(&Sprite.new_game_hover, new_game_region.x, new_game_region.y);
-        } else {
-            g.canvas.draw_sprite(&Sprite.new_game, new_game_region.x, new_game_region.y);
-        }
-        if (restart_game_region.inside(mouse_x, mouse_y)) {
-            g.canvas.draw_sprite(&Sprite.restart_game_hover, restart_game_region.x, restart_game_region.y);
-        } else {
-            g.canvas.draw_sprite(&Sprite.restart_game, restart_game_region.x, restart_game_region.y);
-        }
-        if (highlight_region.inside(mouse_x, mouse_y)) {
-            if (!g.highlight_moves) {
-                g.canvas.draw_sprite(&Sprite.highlight_on_hover, highlight_region.x, highlight_region.y);
-            } else {
-                g.canvas.draw_sprite(&Sprite.highlight_off_hover, highlight_region.x, highlight_region.y);
-            }
-        } else {
-            if (!g.highlight_moves) {
-                g.canvas.draw_sprite(&Sprite.highlight_on, highlight_region.x, highlight_region.y);
-            } else {
-                g.canvas.draw_sprite(&Sprite.highlight_off, highlight_region.x, highlight_region.y);
-            }
-        }
-
-        { // TODO: add toggle + harder: fps show value of time taken for frame not vsynced one
-            const x = 20;
-            const y = 20;
-            const w = 145;
-            const h = 14;
-            const rect: Rect = .{ .x = x, .y = y, .w = w, .h = h };
-            g.canvas.draw_rect(rect.inset(-5, -5), BLACK);
-            g.canvas.draw_rect(rect.inset(-7, -7), WHITE);
-
-            const shift = 10 + 2;
-            {
-                var i: i32 = 0;
-                g.canvas.draw_sprite(&Sprite.fpsfont_F, x + shift * i, y);
-                i += 1;
-                g.canvas.draw_sprite(&Sprite.fpsfont_P, x + shift * i, y);
-                i += 1;
-                g.canvas.draw_sprite(&Sprite.fpsfont_S, x + shift * i, y);
-                i += 1;
-                g.canvas.draw_sprite(&Sprite.@"fpsfont_:", x + shift * i, y);
-                i += 1;
-                i += 1;
-                var buf: [128]u8 = undefined;
-                const out = std.fmt.bufPrint(&buf, "{d:.2}", .{g.fps_cache}) catch unreachable;
-                i += @intCast(7 - out.len);
-                for (out) |sym| {
-                    const sprite = switch (sym) {
-                        '0' => &Sprite.fpsfont_0,
-                        '1' => &Sprite.fpsfont_1,
-                        '2' => &Sprite.fpsfont_2,
-                        '3' => &Sprite.fpsfont_3,
-                        '4' => &Sprite.fpsfont_4,
-                        '5' => &Sprite.fpsfont_5,
-                        '6' => &Sprite.fpsfont_6,
-                        '7' => &Sprite.fpsfont_7,
-                        '8' => &Sprite.fpsfont_8,
-                        '9' => &Sprite.fpsfont_9,
-                        '.' => &Sprite.@"fpsfont_.",
-                        else => unreachable,
-                    };
-                    g.canvas.draw_sprite(sprite, x + shift * i, y);
-                    i += 1;
-                }
-            }
-        }
+    {
+        const rect = new_game_btn_rect;
+        g.canvas.draw_rect(rect, BLACK);
+        const inner_color = if (rect.inside(mouse_x, mouse_y)) GRAY else WHITE;
+        g.canvas.draw_rect(rect.inset(2, 2), inner_color);
+        const text_region = rect.inset(10, 6);
+        d2.draw_monogram_text(&g.canvas, "NEW GAME", text_region.x, text_region.y, 4);
+    }
+    {
+        const rect = restart_game_btn_rect;
+        g.canvas.draw_rect(rect, BLACK);
+        const inner_color = if (rect.inside(mouse_x, mouse_y)) GRAY else WHITE;
+        g.canvas.draw_rect(rect.inset(2, 2), inner_color);
+        const text_region = rect.inset(10, 6);
+        d2.draw_monogram_text(&g.canvas, "RESTART GAME", text_region.x, text_region.y, 4);
+    }
+    {
+        const rect = highlight_mode_btn_rect;
+        g.canvas.draw_rect(rect, BLACK);
+        const inner_color = if (rect.inside(mouse_x, mouse_y)) GRAY else WHITE;
+        g.canvas.draw_rect(rect.inset(2, 2), inner_color);
+        const text_region = rect.inset(10, 6);
+        const text = if (g.highlight_moves) "HIGHLIGHT MOVES: ON" else "HIGHLIGHT MOVES: OFF";
+        d2.draw_monogram_text(&g.canvas, text, text_region.x, text_region.y, 4);
     }
 
     if (g.win) {
-        const text_w = 32;
-        const gap = 4;
-        // const text_h = 32;
-        const letters = [_]?*const Sprite{ &Sprite.text_y, &Sprite.text_o, &Sprite.text_u, null, &Sprite.text_w, &Sprite.text_i, &Sprite.text_n };
-        const text_all_w = @as(i32, @intCast(letters.len)) * (text_w + gap) - gap;
-        const text_shift_x = @divTrunc(width - text_all_w, 2);
-        for (letters, 0..) |sprite, i| {
-            if (sprite == null) continue;
-            const x = @as(i32, @intCast(i)) * (text_w + gap) + text_shift_x;
+        const text = "YOU WIN!";
+        const text_all_w = text.len * (char_w + 4) - 4;
+        const text_shift_x = @divTrunc(canvas_w - text_all_w, 2);
+
+        for (text, 0..) |char, i| {
+            const x = @as(i32, @intCast(i)) * (char_w + 4) + text_shift_x;
             const delta = time / 300 + @as(f32, @floatFromInt(i)) / 2;
             const A = 10;
             const y: i32 = @as(i32, @intFromFloat(@trunc(std.math.sin(delta) * A))) + main_board_y_shift + 200;
-            g.canvas.draw_sprite(sprite.?, x, y);
+            const color_rot: f64 = @mod((time / 2000) - 1.0 * @as(f64, @floatFromInt(i)) / text.len, 1.0);
+
+            g.canvas.draw_rect(Rect.from_wh(char_w, char_h).offset(x, y).inset(-2, -10), color_circle(color_rot));
+            d2.draw_monogram_text(&g.canvas, &.{char}, x, y, 0);
         }
     }
 
@@ -765,4 +609,115 @@ pub fn frame(g: *Game) void {
 
     g.canvas.end_frame();
     pf.output_image_data(@ptrCast(g.canvas.surf.pixels));
+}
+
+fn color_circle(rot: f64) d2.RGBA {
+    std.debug.assert(0.0 <= rot and rot < 1.0);
+    const sector = 1.0 / 6.0;
+    if (rot < 1 * sector) {
+        const v: u8 = @intFromFloat(255 * (6 * rot - 0));
+        return .{ .r = 0xFF, .g = 0x00, .b = v, .a = 0xFF };
+    }
+    if (rot < 2 * sector) {
+        const v: u8 = @intFromFloat(255 * (6 * rot - 1));
+        return .{ .r = 0xFF - v, .g = 0x00, .b = 0xFF, .a = 0xFF };
+    }
+    if (rot < 3 * sector) {
+        const v: u8 = @intFromFloat(255 * (6 * rot - 2));
+        return .{ .r = 0x00, .g = v, .b = 0xFF, .a = 0xFF };
+    }
+    if (rot < 4 * sector) {
+        const v: u8 = @intFromFloat(255 * (6 * rot - 3));
+        return .{ .r = 0x00, .g = 0xFF, .b = 0xFF - v, .a = 0xFF };
+    }
+    if (rot < 5 * sector) {
+        const v: u8 = @intFromFloat(255 * (6 * rot - 4));
+        return .{ .r = v, .g = 0xFF, .b = 0x00, .a = 0xFF };
+    }
+    if (rot < 6 * sector) {
+        const v: u8 = @intFromFloat(255 * (6 * rot - 5));
+        return .{ .r = 0xFF, .g = 0xFF - v, .b = 0x00, .a = 0xFF };
+    }
+    unreachable;
+}
+
+fn cardDropPos(card_region: Rect) ?Freecell.CardPos { // card position, ignore cascade row
+    var best_area: i64 = 0; // search of best intersection
+    var best_pos: ?Freecell.CardPos = null;
+    for (0..4) |i| { // open slots
+        const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + main_board_x_shift;
+        const y = top_line_y;
+        const intersect_area = card_region.intersect(.{ .x = x, .y = y, .w = card_w, .h = card_h }).area();
+        if (intersect_area > best_area) {
+            best_area = intersect_area;
+            best_pos = .{ .open_slot = @intCast(i) };
+        }
+    }
+    for (0..8) |i| { // cascades
+        const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + main_board_x_shift;
+        const y = main_board_y_shift;
+        const intersect_area = card_region.intersect(.{ .x = x, .y = y, .w = card_w, .h = canvas_h - main_board_y_shift }).area();
+        if (intersect_area > best_area) {
+            best_area = intersect_area;
+            best_pos = .{ .cascade = .{ @intCast(i), 0 } };
+        }
+    }
+    for (0..4) |i| { // foundation
+        const x = @as(i32, @intCast(i + 4)) * (card_w + card_x_gap) + main_board_x_shift;
+        const y = top_line_y;
+        const intersect_area = card_region.intersect(.{ .x = x, .y = y, .w = card_w, .h = card_h }).area();
+        if (intersect_area > best_area) {
+            best_area = intersect_area;
+            best_pos = .{ .foundation = @intCast(i) };
+        }
+    }
+    return best_pos;
+}
+
+fn cardRegionFromPos(pos: Freecell.CardPos) Rect {
+    switch (pos) {
+        .cascade => |ij| {
+            const i = ij[0];
+            const j = ij[1];
+            const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + main_board_x_shift;
+            const y = @as(i32, @intCast(j)) * card_y_shift + main_board_y_shift;
+            return .{ .x = x, .y = y, .w = card_w, .h = card_h };
+        },
+        .open_slot => |i| {
+            const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + main_board_x_shift;
+            const y = top_line_y;
+            return .{ .x = x, .y = y, .w = card_w, .h = card_h };
+        },
+        .foundation => |i| {
+            const x = @as(i32, @intCast(i + 4)) * (card_w + card_x_gap) + main_board_x_shift;
+            const y = top_line_y;
+            return .{ .x = x, .y = y, .w = card_w, .h = card_h };
+        },
+    }
+}
+
+fn cardClickPos(g: *Game, click_x: i32, click_y: i32) ?Freecell.CardPos { // card position
+    for (0..4) |i| { // open slots
+        const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + main_board_x_shift;
+        const y = top_line_y;
+        const region: Rect = .{ .x = x, .y = y, .w = card_w, .h = card_h };
+        if (region.inside(click_x, click_y)) {
+            if (g.freecell.open_slots[@intCast(i)] == null) return null;
+            return .{ .open_slot = @intCast(i) };
+        }
+    }
+    for (g.freecell.cascades, 0..) |cascade, i| { // cascades
+        for (cascade.slice(), 0..) |_, j| {
+            const x = @as(i32, @intCast(i)) * (card_w + card_x_gap) + main_board_x_shift;
+            const y = @as(i32, @intCast(j)) * card_y_shift + main_board_y_shift;
+            const region: Rect = blk: {
+                if (j != cascade.len - 1) break :blk .{ .x = x, .y = y, .w = card_w, .h = card_y_shift };
+                break :blk .{ .x = x, .y = y, .w = card_w, .h = card_h }; // last card
+            };
+            if (region.inside(click_x, click_y)) {
+                return .{ .cascade = .{ @intCast(i), @intCast(j) } };
+            }
+        }
+    }
+    return null;
 }

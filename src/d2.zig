@@ -15,17 +15,42 @@ pub const Surface = struct {
     h: i32,
 };
 
-fn draw_rect_to_surface(surf: Surface, dest_rect: Rect, color: RGBA) void {
-    std.debug.assert(color.a == 0xFF); // TODO
+inline fn blend_pixel_no_alpha(dest: RGBA, src: RGBA) RGBA {
+    _ = dest;
+    return src;
+}
+
+inline fn blend_pixel_simple_alpha(dest: RGBA, src: RGBA) RGBA {
+    return if (src.a != 0) src else dest;
+}
+
+inline fn blend_pixel(dest: RGBA, src: RGBA) RGBA {
+    const ra = 0xFF - src.a;
+    var res = dest;
+    res.r = @intCast((@as(u16, src.r) * src.a + @as(u16, dest.r) * ra) >> 8);
+    res.g = @intCast((@as(u16, src.g) * src.a + @as(u16, dest.g) * ra) >> 8);
+    res.b = @intCast((@as(u16, src.b) * src.a + @as(u16, dest.b) * ra) >> 8);
+    return res;
+}
+
+inline fn draw_rect_loop(surf: Surface, dest_rect: Rect, color: RGBA, comptime blend: fn (RGBA, RGBA) callconv(.Inline) RGBA) void {
     var i: usize = @intCast(dest_rect.y * surf.w + dest_rect.x);
     var dy: i32 = 0;
     while (dy < dest_rect.h) : (dy += 1) {
         var dx: i32 = 0;
         while (dx < dest_rect.w) : (dx += 1) {
-            surf.pixels[i] = color;
+            surf.pixels[i] = blend(surf.pixels[i], color);
             i += 1;
         }
         i += @intCast(surf.w - dest_rect.w);
+    }
+}
+
+fn draw_rect_to_surface(surf: Surface, dest_rect: Rect, color: RGBA) void {
+    if (color.a == 0xFF) {
+        draw_rect_loop(surf, dest_rect, color, blend_pixel_no_alpha);
+    } else if (color.a > 0) {
+        draw_rect_loop(surf, dest_rect, color, blend_pixel);
     }
 }
 
@@ -51,6 +76,19 @@ fn draw_sprite_to_surface(surf: Surface, dest_rect: Rect, sprite: *const Sprite,
 }
 
 pub const Canvas = CachedCanvas;
+
+pub fn draw_monogram_text(c: *Canvas, text: []const u8, x: i32, y: i32, dx: i32) void {
+    var cur_x: i32 = x;
+    for (text) |char| {
+        const sprite = if (32 <= char and char <= 127)
+            &Sprite.monogram[char - 32]
+        else
+            &Sprite.monogram[127 - 32 + 1];
+
+        c.draw_sprite(sprite, cur_x, y);
+        cur_x += dx + sprite.w;
+    }
+}
 
 const ImmediateCanvas = struct {
     surf: Surface,
@@ -89,7 +127,7 @@ const CachedCanvas = struct {
     cur_frame_ops: std.BoundedArray(DrawOp, 256),
 
     prev_frame_ops: std.BoundedArray(DrawOp, 256),
-    prev_frame_grid: [250]std.BoundedArray(u8, 32),
+    prev_frame_grid: [250]std.BoundedArray(u8, 64),
 
     const Self = @This();
 
@@ -112,7 +150,7 @@ const CachedCanvas = struct {
             .surf = provided_surf,
             .cur_frame_ops = std.BoundedArray(DrawOp, 256){},
             .prev_frame_ops = std.BoundedArray(DrawOp, 256){},
-            .prev_frame_grid = .{std.BoundedArray(u8, 32){}} ** 250,
+            .prev_frame_grid = .{std.BoundedArray(u8, 64){}} ** 250,
         };
     }
 
@@ -160,7 +198,7 @@ const CachedCanvas = struct {
         const grid_w = std.math.divCeil(i32, self.surf.w, cell_wh) catch unreachable;
         const grid_h = std.math.divCeil(i32, self.surf.h, cell_wh) catch unreachable;
 
-        var grid: [250]std.BoundedArray(u8, 32) = .{std.BoundedArray(u8, 32){}} ** 250;
+        var grid: [250]std.BoundedArray(u8, 64) = .{std.BoundedArray(u8, 64){}} ** 250;
         for (self.cur_frame_ops.slice(), 0..) |op, i| {
             const dirty_rect: Rect = switch (op) {
                 .rect => |rect_op| rect_op.rect,

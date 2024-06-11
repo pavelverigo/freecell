@@ -88,76 +88,34 @@ pub fn main() !void {
     }
 
     {
-        const ui_names = [_][]const u8{
-            "fullscreen_on",
-            "fullscreen_on_hover",
-            "fullscreen_off",
-            "fullscreen_off_hover",
-            "new_game",
-            "new_game_hover",
-            "restart_game",
-            "restart_game_hover",
-            "highlight_on",
-            "highlight_off",
-            "highlight_on_hover",
-            "highlight_off_hover",
-        };
-        const ui_width = [_]usize{ 50, 50, 50, 50, 125, 125, 165, 165, 250, 250, 250, 250 };
-        const ui_width_sum = comptime blk: {
-            var tmp = 0;
-            for (ui_width) |w| tmp += w;
-            break :blk tmp;
-        };
-        const ui_height = 50;
-
-        var image = STBImage.load("sprites/ui-height50.png");
-        defer image.deinit();
-        std.debug.assert(image.w == ui_width_sum and image.h == ui_height);
-
-        var x: usize = 0;
-        for (ui_names, ui_width) |name, w| {
-            const y = 0;
-            try embeder.embed_cropped_image(name, image, x, y, w, ui_height);
-            x += w;
-        }
-
-        try zig_file_writer.print("\n", .{});
-    }
-
-    { // win text
-        const text_w = 32;
-        const text_h = 32;
-
-        var image = STBImage.load("sprites/text-32x32.png");
-        defer image.deinit();
-        std.debug.assert(image.w == text_w and image.h == text_h * 26);
-
-        for ('a'..('z' + 1), 0..) |letter, i| {
-            const x = 0;
-            const y = i * text_h;
-            const name = try std.fmt.allocPrint(arena, "text_{c}", .{@as(u8, @intCast(letter))});
-            try embeder.embed_cropped_image(name, image, x, y, text_w, text_h);
-        }
-
-        try zig_file_writer.print("\n", .{});
-    }
-
-    {
         const text_w = 10;
-        const text_h = 14;
+        const text_h = 22;
+        const char_cnt = (127 - 32 + 1) + 1;
 
-        var image = STBImage.load("sprites/fps-font-10x14.png");
+        var image = STBImage.load("sprites/monogram-10x22.png");
         defer image.deinit();
-        std.debug.assert(image.w == text_w * 15 and image.h == text_h);
+        std.debug.assert(image.w == text_w * char_cnt and image.h == text_h);
 
-        const letters = "1234567890:FPS.";
-        for (letters, 0..) |letter, i| {
-            const x = i * text_w;
-            const y = 0;
-            const name = try std.fmt.allocPrint(arena, "@\"fpsfont_{c}\"", .{letter});
-            try embeder.embed_cropped_image(name, image, x, y, text_w, text_h);
+        try zig_file_writer.print("pub const monogram: [{}]Sprite = .{{\n", .{char_cnt});
+        for (0..char_cnt) |i| {
+            const crop_x = i * text_w;
+            const crop_y = 0;
+            const crop_w = text_w;
+            const crop_h = text_h;
+            const source_image = image;
+
+            try zig_file_writer.print(
+                \\    .{{ .w = {}, .h = {}, .pixels = embed_data[{}..][0..{}] }},
+                \\
+            , .{ text_w, text_h, embeder.embed_data_offset, crop_w * crop_h });
+            embeder.embed_data_offset += crop_w * crop_h;
+
+            for (0..crop_h) |offset_y| {
+                const start = 4 * ((crop_y + offset_y) * source_image.w + crop_x);
+                try data_file_writer.writeAll(source_image.data[start..][0 .. 4 * crop_w]);
+            }
         }
-
+        try zig_file_writer.print("}};\n", .{});
         try zig_file_writer.print("\n", .{});
     }
 
